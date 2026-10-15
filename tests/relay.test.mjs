@@ -1,18 +1,49 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import http from 'node:http';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createRelay } from '../server/relay.mjs';
+import { AdbError } from '../server/adb.mjs';
+import { parseLink } from '../server/shows.mjs';
+
+const LINKS = {
+  youtube: 'https://www.youtube.com/watch?v=aqz-KE-bpKQ',
+  netflix: 'https://www.netflix.com/in/title/80057281?s=a&trkid=13747225',
+  prime: 'https://app.primevideo.com/detail?gti=amzn1.dv.gti.4eb5d9a6-1f60-4b63-8b10-0123456789ab&ref_=share',
+};
+
+/** Stands in for the ADB bridge: records calls and can be told to fail. */
+function fakeAdb() {
+  const calls = [];
+  let failure = null;
+  let delay = 0;
+  const call = (name, result) => async (...args) => {
+    calls.push([name, ...args]);
+    if (delay) await new Promise((done) => setTimeout(done, delay));
+    if (failure) throw new AdbError(failure, `fake ${failure}`);
+    return result;
+  };
+  return {
+    calls,
+    failWith: (code) => { failure = code; },
+    slow: (ms) => { delay = ms; },
+    key: call('key'), open: call('open'), openApp: call('openApp'), wake: call('wake'),
+    status: call('status', { awake: true, app: 'home', package: 'com.amazon.tv.launcher' }),
+    snapshot: call('snapshot', Buffer.from('fake-png')),
+  };
+}
 
 async function harness(t, options = {}) {
   const prefix = join(tmpdir(), 'mompilot-relay-');
   const dataDir = await mkdtemp(prefix);
-  let time = Date.parse('2026-09-29T12:00:00Z');
+  let time = Date.parse('2026-10-14T12:00:00Z');
+  const adb = fakeAdb();
   let relay;
   let base;
   async function start() {
-    relay = createRelay({ dataDir, now: () => time, rateLimit: false, ...options });
+    relay = createRelay({ dataDir, now: () => time, rateLimit: false, adb, resolve: async (link) => parseLink(link), ...options });
     await new Promise((done) => relay.server.listen(0, '127.0.0.1', done));
     base = `http://127.0.0.1:${relay.server.address().port}`;
   }
@@ -34,7 +65,12 @@ async function harness(t, options = {}) {
       },
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
     });
-    return { status: response.status, body: await response.json(), cookie: response.headers.get('set-cookie') };
+    const type = response.headers.get('content-type') || '';
+    return {
+      status: response.status, type,
+      body: type.startsWith('application/json') ? await response.json() : Buffer.from(await response.arrayBuffer()),
+      cookie: response.headers.get('set-cookie'),
+    };
   };
   const session = async (name = 'Varish') => {
     const response = await api('/api/session', { method: 'POST', body: { name } });
@@ -46,22 +82,27 @@ async function harness(t, options = {}) {
     assert.equal(response.status, 201);
     return response.body;
   };
-  const pair = async () => {
+  const pair = async ({ adbTarget } = {}) => {
     const caregiver = await session();
     const tv = await register();
     const response = await api('/api/pair', { method: 'POST', cookie: caregiver.cookie, body: { code: tv.code, name: 'Mom’s TV' } });
     assert.equal(response.status, 200);
+    if (adbTarget) assert.equal((await api(`/api/devices/${tv.deviceId}`, { method: 'PATCH', cookie: caregiver.cookie, body: { adbTarget } })).status, 200);
     return { ...caregiver, ...tv, device: response.body.device };
   };
-  const send = (pairing, body = {}) => api(`/api/devices/${pairing.deviceId}/commands`, {
-    method: 'POST', cookie: pairing.cookie,
-    body: { type: 'PLAY_CATALOG_ITEM', itemId: 'bunny', idempotencyKey: 'first-action', ...body },
-  });
-  const ack = (pairing, command, state, reason) => api('/api/tv/ack', {
-    method: 'POST', token: pairing.token, body: { id: command.id, state, ...(reason ? { reason } : {}) },
+  const save = async (pairing, app = 'youtube', title = 'A favourite') => {
+    const response = await api('/api/shows', { method: 'POST', cookie: pairing.cookie, body: { title, link: LINKS[app] } });
+    assert.equal(response.status, 201);
+    return response.body.show;
+  };
+  const command = (pairing, body) => api(`/api/devices/${pairing.deviceId}/commands`, { method: 'POST', cookie: pairing.cookie, body });
+  const play = (pairing, show, idempotencyKey = 'first-tap') => command(pairing, { type: 'OPEN_SHOW', showId: show.id, idempotencyKey });
+  const ack = (pairing, sent, state, reason) => api('/api/tv/ack', {
+    method: 'POST', token: pairing.token, body: { id: sent.id, state, ...(reason ? { reason } : {}) },
   });
   return {
-    api, session, register, pair, send, ack, dataDir,
+    api, session, register, pair, save, command, play, ack, adb, dataDir,
+    base: () => base,
     advance: (ms) => { time += ms; },
     restart: async () => { await relay.close(); await start(); },
   };
@@ -76,47 +117,71 @@ test('caregiver cookie is httpOnly, private, persistent, and required', async (t
   assert.match(caregiver.cookieHeader, /Path=\/api/);
   const who = await h.api('/api/session', { cookie: caregiver.cookie });
   assert.equal(who.body.caregiver.name, 'Varish');
-  assert.equal(who.body.caregiver.id, caregiver.caregiver.id);
   await h.restart();
   assert.equal((await h.api('/api/session', { cookie: caregiver.cookie })).status, 200);
   await h.api('/api/session', { method: 'DELETE', cookie: caregiver.cookie });
   assert.equal((await h.api('/api/session', { cookie: caregiver.cookie })).status, 401);
 });
 
-test('pairing is single-use and devices are isolated between caregiver identities', async (t) => {
+test('sessions last 400 days and each app launch renews them', async (t) => {
+  const h = await harness(t);
+  const caregiver = await h.session();
+  assert.match(caregiver.cookieHeader, /Max-Age=34560000/);
+  h.advance(399 * 24 * 60 * 60 * 1000);
+  const renewed = await h.api('/api/session', { cookie: caregiver.cookie });
+  assert.equal(renewed.status, 200);
+  assert.match(renewed.cookie, /Max-Age=34560000/);
+  h.advance(399 * 24 * 60 * 60 * 1000);
+  assert.equal((await h.api('/api/session', { cookie: caregiver.cookie })).status, 200);
+  h.advance(401 * 24 * 60 * 60 * 1000);
+  assert.equal((await h.api('/api/session', { cookie: caregiver.cookie })).status, 401);
+});
+
+test('a second phone joins the same account with a single-use link code', async (t) => {
+  const h = await harness(t);
+  const pairing = await h.pair();
+  const show = await h.save(pairing, 'netflix', 'Kota Factory');
+  assert.equal((await h.api('/api/session/link', { method: 'POST', body: {} })).status, 401);
+  const link = await h.api('/api/session/link', { method: 'POST', cookie: pairing.cookie, body: {} });
+  assert.match(link.body.code, /^\d{6}$/);
+  const joined = await h.api('/api/session/join', { method: 'POST', body: { code: link.body.code } });
+  assert.equal(joined.status, 201);
+  assert.equal(joined.body.caregiver.id, pairing.caregiver.id);
+  const phone2 = joined.cookie.split(';')[0];
+  assert.deepEqual((await h.api('/api/shows', { cookie: phone2 })).body.shows.map((entry) => entry.id), [show.id]);
+  assert.equal((await h.api(`/api/devices/${pairing.deviceId}`, { cookie: phone2 })).status, 200);
+  assert.equal((await h.api('/api/session/join', { method: 'POST', body: { code: link.body.code } })).body.error, 'INVALID_CODE');
+  // Renaming on one phone renames everywhere, and signing out one phone leaves the other signed in.
+  await h.api('/api/session', { method: 'POST', cookie: phone2, body: { name: 'Rahul' } });
+  assert.equal((await h.api('/api/session', { cookie: pairing.cookie })).body.caregiver.name, 'Rahul');
+  await h.api('/api/session', { method: 'DELETE', cookie: phone2 });
+  assert.equal((await h.api('/api/session', { cookie: pairing.cookie })).status, 200);
+  // A code still works if the phone that made it signs out first.
+  const handOff = await h.api('/api/session/link', { method: 'POST', cookie: pairing.cookie, body: {} });
+  const phone3 = await h.api('/api/session/join', { method: 'POST', body: { code: handOff.body.code } });
+  await h.api('/api/session', { method: 'DELETE', cookie: pairing.cookie });
+  const handOff2 = await h.api('/api/session/link', { method: 'POST', cookie: phone3.cookie.split(';')[0], body: {} });
+  await h.api('/api/session', { method: 'DELETE', cookie: phone3.cookie.split(';')[0] });
+  const phone4 = await h.api('/api/session/join', { method: 'POST', body: { code: handOff2.body.code } });
+  assert.deepEqual([phone4.status, phone4.body.caregiver.id, phone4.body.caregiver.name], [201, pairing.caregiver.id, 'Rahul']);
+  // Codes expire after ten minutes.
+  const late = await h.api('/api/session/link', { method: 'POST', cookie: phone4.cookie.split(';')[0], body: {} });
+  h.advance(10 * 60 * 1000);
+  assert.equal((await h.api('/api/session/join', { method: 'POST', body: { code: late.body.code } })).body.error, 'INVALID_CODE');
+});
+
+test('pairing is single-use and devices are isolated between caregivers', async (t) => {
   const h = await harness(t);
   const pairing = await h.pair();
   assert.match(pairing.code, /^\d{6}$/);
   assert.equal(pairing.device.caregiver.name, 'Varish');
-  assert.equal(pairing.device.paired, true);
   const other = await h.session('Another caregiver');
   const replay = await h.api('/api/pair', { method: 'POST', cookie: other.cookie, body: { code: pairing.code, name: 'Other TV' } });
-  assert.equal(replay.status, 400);
   assert.equal(replay.body.error, 'INVALID_CODE');
   assert.deepEqual((await h.api('/api/devices', { cookie: other.cookie })).body.devices, []);
   assert.equal((await h.api(`/api/devices/${pairing.deviceId}`, { cookie: other.cookie })).status, 404);
-  assert.equal((await h.send({ ...pairing, cookie: other.cookie })).status, 404);
+  assert.equal((await h.command({ ...pairing, cookie: other.cookie }, { type: 'KEY', key: 'ok' })).status, 404);
   assert.equal((await h.api('/api/tv/pairing', { method: 'POST', token: pairing.token, body: {} })).status, 409);
-});
-
-test('editing a caregiver name preserves session identity, paired TVs, and command access', async (t) => {
-  const h = await harness(t);
-  const pairing = await h.pair();
-  const edited = await h.api('/api/session', { method: 'POST', cookie: pairing.cookie, body: { name: '  Priya  ' } });
-  assert.equal(edited.status, 200);
-  assert.equal(edited.body.caregiver.id, pairing.caregiver.id);
-  assert.equal(edited.body.caregiver.name, 'Priya');
-  assert.equal(edited.cookie, null);
-  assert.equal((await h.api('/api/session', { cookie: pairing.cookie })).body.caregiver.name, 'Priya');
-  const devices = await h.api('/api/devices', { cookie: pairing.cookie });
-  assert.equal(devices.body.devices[0].id, pairing.deviceId);
-  assert.equal(devices.body.devices[0].caregiver.name, 'Priya');
-  assert.equal((await h.api('/api/tv/commands', { token: pairing.token })).body.device.caregiver.name, 'Priya');
-  assert.equal((await h.send(pairing)).status, 201);
-  await h.restart();
-  const restored = await h.api(`/api/devices/${pairing.deviceId}`, { cookie: pairing.cookie });
-  assert.equal(restored.status, 200);
-  assert.equal(restored.body.device.caregiver.name, 'Priya');
 });
 
 test('pairing expires at the deadline and refreshing invalidates the previous code', async (t) => {
@@ -126,150 +191,184 @@ test('pairing expires at the deadline and refreshing invalidates the previous co
   h.advance(1000);
   assert.equal((await h.api('/api/pair', { method: 'POST', cookie: caregiver.cookie, body: { code: tv.code, name: 'TV' } })).status, 400);
   const fresh = await h.api('/api/tv/pairing', { method: 'POST', token: tv.token, body: {} });
-  assert.equal(fresh.status, 200);
   assert.equal((await h.api('/api/pair', { method: 'POST', cookie: caregiver.cookie, body: { code: fresh.body.code, name: 'TV' } })).status, 200);
 });
 
-test('device tokens cannot access another TV or acknowledge its commands', async (t) => {
+test('saved shows accept YouTube, Netflix and Prime Video links and are private to each caregiver', async (t) => {
   const h = await harness(t);
   const pairing = await h.pair();
-  const other = await h.register();
-  assert.equal((await h.api('/api/tv/commands')).status, 401);
-  assert.equal((await h.api('/api/tv/commands', { token: 'not-a-real-token' })).status, 401);
-  const queued = await h.send(pairing);
-  assert.equal((await h.ack(other, queued.body.command, 'RECEIVED')).status, 404);
-  const poll = await h.api('/api/tv/commands', { token: other.token });
-  assert.equal(poll.body.device.id, other.deviceId);
-  assert.deepEqual(poll.body.commands, []);
+  const youtube = await h.save(pairing, 'youtube', 'Bhajan');
+  assert.deepEqual([youtube.app, youtube.contentId, youtube.image], ['youtube', 'aqz-KE-bpKQ', 'https://i.ytimg.com/vi/aqz-KE-bpKQ/hqdefault.jpg']);
+  assert.equal((await h.save(pairing, 'netflix')).contentId, '80057281');
+  assert.equal((await h.save(pairing, 'prime')).contentId, 'amzn1.dv.gti.4eb5d9a6-1f60-4b63-8b10-0123456789ab');
+  const bad = await h.api('/api/shows', { method: 'POST', cookie: pairing.cookie, body: { title: 'Nope', link: 'https://example.com/watch?v=aqz-KE-bpKQ' } });
+  assert.equal(bad.body.error, 'INVALID_LINK');
+  assert.equal((await h.api('/api/shows', { cookie: pairing.cookie })).body.shows.length, 3);
+  const other = await h.session('Someone else');
+  assert.deepEqual((await h.api('/api/shows', { cookie: other.cookie })).body.shows, []);
+  assert.equal((await h.api(`/api/shows/${youtube.id}`, { method: 'DELETE', cookie: other.cookie })).status, 404);
+  assert.equal((await h.api(`/api/shows/${youtube.id}`, { method: 'DELETE', cookie: pairing.cookie })).status, 200);
+  assert.equal((await h.api('/api/shows', { cookie: pairing.cookie })).body.shows.length, 2);
+  // Another caregiver cannot play a show they don't own.
+  const theirs = await h.pair();
+  assert.equal((await h.play(theirs, { id: (await h.save(pairing, 'netflix')).id })).body.error, 'SHOW_NOT_FOUND');
 });
 
-test('command retry returns the original record and rejects changed payloads', async (t) => {
+test('opening a show uses ADB when an address is set, and retries do not open it twice', async (t) => {
   const h = await harness(t);
-  const pairing = await h.pair();
-  const first = await h.send(pairing);
+  const pairing = await h.pair({ adbTarget: '100.101.102.103:5555' });
+  const show = await h.save(pairing, 'netflix', 'Kota Factory');
+  const first = await h.play(pairing, show);
   assert.equal(first.status, 201);
-  const repeated = await h.send(pairing);
-  assert.equal(repeated.status, 200);
-  assert.equal(first.body.command.id, repeated.body.command.id);
-  const conflict = await h.send(pairing, { itemId: 'sintel' });
-  assert.equal(conflict.status, 409);
-  assert.equal(conflict.body.error, 'IDEMPOTENCY_CONFLICT');
-  h.advance(31_000);
-  const lateRetry = await h.send(pairing);
-  assert.equal(lateRetry.status, 200);
-  assert.equal(lateRetry.body.command.state, 'EXPIRED');
-  assert.equal(lateRetry.body.command.id, first.body.command.id);
-  const detail = await h.api(`/api/devices/${pairing.deviceId}`, { cookie: pairing.cookie });
-  assert.equal(detail.body.commands.length, 1);
+  assert.deepEqual([first.body.command.state, first.body.command.via, first.body.command.title], ['LAUNCHED', 'adb', 'Kota Factory']);
+  const [, target, launch] = h.adb.calls.find(([name]) => name === 'open');
+  assert.equal(target, '100.101.102.103:5555');
+  assert.deepEqual([launch.data, launch.forceStop], ['netflix://title/80057281', 'com.netflix.ninja']);
+  const retry = await h.play(pairing, show);
+  assert.equal(retry.status, 200);
+  assert.equal(retry.body.command.id, first.body.command.id);
+  assert.equal(h.adb.calls.filter(([name]) => name === 'open').length, 1);
+  const changed = await h.command(pairing, { type: 'OPEN_APP', app: 'youtube', idempotencyKey: 'first-tap' });
+  assert.equal(changed.body.error, 'IDEMPOTENCY_CONFLICT');
+  const app = await h.command(pairing, { type: 'OPEN_APP', app: 'prime', idempotencyKey: 'second-tap' });
+  assert.equal(app.body.command.state, 'LAUNCHED');
+  assert.deepEqual(h.adb.calls.at(-1), ['openApp', '100.101.102.103:5555', 'prime']);
 });
 
-test('acks require receipt and a result matching the allowed command type', async (t) => {
+test('concurrent duplicate taps wait for the first ADB launch instead of opening twice', async (t) => {
   const h = await harness(t);
-  const pairing = await h.pair();
-  const { command } = (await h.send(pairing)).body;
-  assert.equal((await h.ack(pairing, command, 'PLAYING')).status, 409);
-  assert.equal((await h.ack(pairing, command, 'RECEIVED')).status, 200);
-  assert.equal((await h.ack(pairing, command, 'RECEIVED')).status, 200);
-  assert.equal((await h.ack(pairing, command, 'DISPLAYED')).status, 409);
-  assert.equal((await h.ack(pairing, command, 'PLAYING')).body.command.state, 'PLAYING');
-  assert.equal((await h.ack(pairing, command, 'PLAYING')).status, 200);
-  assert.equal((await h.ack(pairing, command, 'FAILED', 'Too late')).status, 409);
+  const pairing = await h.pair({ adbTarget: '100.101.102.103:5555' });
+  const show = await h.save(pairing);
+  h.adb.slow(50);
+  const [a, b] = await Promise.all([h.play(pairing, show), h.play(pairing, show)]);
+  assert.equal(a.body.command.id, b.body.command.id);
+  assert.equal(h.adb.calls.filter(([name]) => name === 'open').length, 1);
+});
+
+test('when ADB is unavailable, the TV app opens the show and reports the result', async (t) => {
+  const h = await harness(t);
+  const pairing = await h.pair({ adbTarget: '100.101.102.103:5555' });
+  const show = await h.save(pairing, 'youtube');
+  h.adb.failWith('ADB_OFFLINE');
+  const sent = await h.play(pairing, show);
+  assert.equal(sent.status, 201);
+  assert.deepEqual([sent.body.command.state, sent.body.command.via], ['QUEUED', 'tv']);
+  const poll = await h.api('/api/tv/commands', { token: pairing.token });
+  assert.equal(poll.body.commands.length, 1);
+  assert.deepEqual(poll.body.commands[0].launch, {
+    action: 'android.intent.action.VIEW', data: 'https://www.youtube.com/watch?v=aqz-KE-bpKQ', package: 'com.amazon.firetv.youtube',
+  });
+  assert.equal((await h.ack(pairing, sent.body.command, 'LAUNCHED')).status, 200);
+  const details = await h.api(`/api/devices/${pairing.deviceId}`, { cookie: pairing.cookie });
+  assert.equal(details.body.commands[0].state, 'LAUNCHED');
+  assert.equal(details.body.adb.state, 'ADB_OFFLINE');
   assert.deepEqual((await h.api('/api/tv/commands', { token: pairing.token })).body.commands, []);
 });
 
-test('expired commands are excluded from polling and cannot be acknowledged', async (t) => {
+test('opening a show fails clearly when neither ADB nor the TV app is reachable', async (t) => {
+  const h = await harness(t);
+  const pairing = await h.pair();
+  const show = await h.save(pairing);
+  h.advance(15_000);
+  const sent = await h.play(pairing, show);
+  assert.equal(sent.status, 409);
+  assert.equal(sent.body.command.state, 'FAILED');
+  assert.match(sent.body.command.reason, /isn’t running/);
+});
+
+test('queued commands expire and cannot be acknowledged afterwards', async (t) => {
   const h = await harness(t, { commandTtlMs: 1000 });
   const pairing = await h.pair();
-  const { command } = (await h.send(pairing)).body;
-  await h.ack(pairing, command, 'RECEIVED');
+  const sent = await h.play(pairing, await h.save(pairing));
+  assert.equal((await h.ack(pairing, sent.body.command, 'RECEIVED')).status, 200);
   h.advance(1000);
   assert.deepEqual((await h.api('/api/tv/commands', { token: pairing.token })).body.commands, []);
-  assert.equal((await h.ack(pairing, command, 'PLAYING')).status, 409);
-  const detail = await h.api(`/api/devices/${pairing.deviceId}`, { cookie: pairing.cookie });
-  assert.equal(detail.body.commands[0].state, 'EXPIRED');
+  assert.equal((await h.ack(pairing, sent.body.command, 'LAUNCHED')).body.error, 'COMMAND_FINISHED');
+  const details = await h.api(`/api/devices/${pairing.deviceId}`, { cookie: pairing.cookie });
+  assert.equal(details.body.commands[0].state, 'EXPIRED');
 });
 
-test('heartbeat timeout is honest and foreground exit invalidates queued work', async (t) => {
+test('remote keys and wake go over ADB and report ADB problems', async (t) => {
   const h = await harness(t);
   const pairing = await h.pair();
-  h.advance(15_000);
-  let detail = await h.api(`/api/devices/${pairing.deviceId}`, { cookie: pairing.cookie });
-  assert.equal(detail.body.device.online, false);
-  assert.equal((await h.send(pairing)).body.error, 'DEVICE_UNAVAILABLE');
-  await h.api('/api/tv/heartbeat', { method: 'POST', token: pairing.token, body: { foreground: true } });
-  const queued = await h.send(pairing);
-  assert.equal(queued.status, 201);
-  await h.api('/api/tv/heartbeat', { method: 'POST', token: pairing.token, body: { foreground: false } });
-  detail = await h.api(`/api/devices/${pairing.deviceId}`, { cookie: pairing.cookie });
-  assert.equal(detail.body.device.online, false);
-  assert.equal(detail.body.commands[0].state, 'FAILED');
-  await h.api('/api/tv/heartbeat', { method: 'POST', token: pairing.token, body: { foreground: true } });
-  assert.deepEqual((await h.api('/api/tv/commands', { token: pairing.token })).body.commands, []);
+  assert.equal((await h.command(pairing, { type: 'KEY', key: 'ok' })).body.error, 'ADB_NOT_SET');
+  await h.api(`/api/devices/${pairing.deviceId}`, { method: 'PATCH', cookie: pairing.cookie, body: { adbTarget: '100.101.102.103:5555' } });
+  assert.equal((await h.command(pairing, { type: 'KEY', key: 'reboot' })).body.error, 'INVALID_KEY');
+  assert.equal((await h.command(pairing, { type: 'KEY', key: 'down' })).status, 200);
+  assert.equal((await h.command(pairing, { type: 'WAKE' })).status, 200);
+  assert.deepEqual(h.adb.calls.slice(-2), [['key', '100.101.102.103:5555', 'down'], ['wake', '100.101.102.103:5555']]);
+  h.adb.failWith('ADB_UNAUTHORIZED');
+  const refused = await h.command(pairing, { type: 'KEY', key: 'ok' });
+  assert.deepEqual([refused.status, refused.body.error], [502, 'ADB_UNAUTHORIZED']);
 });
 
-test('quiet mode blocks new commands, cancels pending work, and survives restart', async (t) => {
+test('the ADB address must be a host and an ADB port', async (t) => {
   const h = await harness(t);
   const pairing = await h.pair();
-  await h.send(pairing);
-  const quiet = await h.api('/api/tv/settings', { method: 'POST', token: pairing.token, body: { quiet: true } });
-  assert.equal(quiet.body.device.quiet, true);
-  assert.equal((await h.send(pairing, { idempotencyKey: 'second-action' })).body.error, 'QUIET_MODE');
-  assert.deepEqual((await h.api('/api/tv/commands', { token: pairing.token })).body.commands, []);
-  const detail = await h.api(`/api/devices/${pairing.deviceId}`, { cookie: pairing.cookie });
-  assert.equal(detail.body.commands[0].state, 'FAILED');
-  await h.restart();
-  assert.equal((await h.api('/api/tv/commands', { token: pairing.token })).body.device.quiet, true);
-});
-
-test('revocation immediately removes caregiver access and clears the previous household history', async (t) => {
-  const h = await harness(t);
-  const pairing = await h.pair();
-  const { command } = (await h.send(pairing)).body;
-  const revoked = await h.api('/api/tv/revoke', { method: 'POST', token: pairing.token, body: {} });
-  assert.equal(revoked.body.device.paired, false);
-  assert.match(revoked.body.code, /^\d{6}$/);
-  assert.equal((await h.send(pairing)).status, 404);
-  assert.deepEqual((await h.api('/api/devices', { cookie: pairing.cookie })).body.devices, []);
-  assert.equal((await h.ack(pairing, command, 'RECEIVED')).status, 404);
-  const other = await h.session('New caregiver');
-  const repaired = await h.api('/api/pair', { method: 'POST', cookie: other.cookie, body: { code: revoked.body.code, name: 'New TV name' } });
-  assert.equal(repaired.status, 200);
-  const detail = await h.api(`/api/devices/${pairing.deviceId}`, { cookie: other.cookie });
-  assert.deepEqual(detail.body.commands, []);
-  assert.equal(detail.body.device.caregiver.name, 'New caregiver');
-});
-
-test('unapproved videos, freeform messages, arbitrary URLs, and invalid heartbeat data are rejected', async (t) => {
-  const h = await harness(t);
-  const pairing = await h.pair();
-  assert.equal((await h.send(pairing, { itemId: 'https://example.com/secret.mp4' })).status, 400);
-  assert.equal((await h.send(pairing, { url: 'https://example.com/secret.mp4' })).status, 400);
-  assert.equal((await h.send(pairing, { type: 'SHELL_EXEC' })).status, 400);
-  assert.equal((await h.send(pairing, { type: 'SHOW_MESSAGE', itemId: undefined, messageId: 'custom text' })).status, 400);
-  assert.equal((await h.api('/api/tv/heartbeat', { method: 'POST', token: pairing.token, body: { foreground: 'yes' } })).status, 400);
-  assert.equal((await h.api('/api/tv/heartbeat', { method: 'POST', token: pairing.token, body: { foreground: true, playback: { itemId: 'netflix', state: 'PLAYING', position: 0, duration: 20 } } })).status, 400);
-  const poll = await h.api('/api/tv/commands', { token: pairing.token });
-  assert.equal(poll.body.device.foreground, true);
-  assert.equal(poll.body.commands.length, 0);
-});
-
-test('message, pause, and resume commands report their distinct acknowledged results', async (t) => {
-  const h = await harness(t);
-  const pairing = await h.pair();
-  for (const [type, payload, finalState] of [
-    ['SHOW_MESSAGE', { messageId: 'found-video' }, 'DISPLAYED'],
-    ['PAUSE', {}, 'PAUSED'],
-    ['RESUME', {}, 'PLAYING'],
-  ]) {
-    const { command } = (await h.send(pairing, { type, itemId: undefined, idempotencyKey: type, ...payload })).body;
-    assert.equal((await h.ack(pairing, command, 'RECEIVED')).status, 200);
-    assert.equal((await h.ack(pairing, command, finalState)).body.command.state, finalState);
+  const set = (adbTarget) => h.api(`/api/devices/${pairing.deviceId}`, { method: 'PATCH', cookie: pairing.cookie, body: { adbTarget } });
+  for (const bad of ['evil.example:22', '100.1.1.1', 'http://100.1.1.1:5555', '100.1.1.1:5555; rm -rf /', 5555]) {
+    assert.equal((await set(bad)).body.error, 'INVALID_ADB_TARGET', String(bad));
   }
-  const heartbeat = await h.api('/api/tv/heartbeat', {
-    method: 'POST', token: pairing.token,
-    body: { foreground: true, playback: { itemId: 'bunny', state: 'PAUSED', position: 12.5, duration: 596 } },
-  });
-  assert.equal(heartbeat.body.device.playback.position, 12.5);
+  assert.equal((await set('mom-firestick:5555')).body.device.adbTarget, 'mom-firestick:5555');
+  assert.equal((await set(null)).body.device.adbTarget, null);
+});
+
+test('device details include ADB status, and snapshots return the TV screen as PNG', async (t) => {
+  const h = await harness(t);
+  const pairing = await h.pair();
+  assert.equal((await h.api(`/api/devices/${pairing.deviceId}/snapshot`, { cookie: pairing.cookie })).body.error, 'ADB_NOT_SET');
+  await h.api(`/api/devices/${pairing.deviceId}`, { method: 'PATCH', cookie: pairing.cookie, body: { adbTarget: '100.101.102.103:5555' } });
+  const details = await h.api(`/api/devices/${pairing.deviceId}`, { cookie: pairing.cookie });
+  assert.deepEqual(details.body.adb, { state: 'CONNECTED', awake: true, app: 'home', package: 'com.amazon.tv.launcher' });
+  assert.equal(details.body.device.appOnline, true);
+  const snapshot = await h.api(`/api/devices/${pairing.deviceId}/snapshot`, { cookie: pairing.cookie });
+  assert.equal(snapshot.type, 'image/png');
+  assert.equal(snapshot.body.toString(), 'fake-png');
+});
+
+test('a slow ADB status check does not hold up device details after the first check', async (t) => {
+  const h = await harness(t);
+  const pairing = await h.pair({ adbTarget: '100.101.102.103:5555' });
+  const details = () => h.api(`/api/devices/${pairing.deviceId}`, { cookie: pairing.cookie });
+  assert.equal((await details()).body.adb.state, 'CONNECTED');
+  h.advance(5000);
+  h.adb.failWith('ADB_OFFLINE');
+  h.adb.slow(300);
+  const started = Date.now();
+  assert.equal((await details()).body.adb.state, 'CONNECTED');
+  assert.ok(Date.now() - started < 250, 'answered from the last result');
+  await new Promise((done) => setTimeout(done, 350));
+  assert.equal((await details()).body.adb.state, 'ADB_OFFLINE');
+});
+
+test('disconnecting on the TV removes caregiver access, the ADB address and history', async (t) => {
+  const h = await harness(t);
+  const pairing = await h.pair({ adbTarget: '100.101.102.103:5555' });
+  await h.play(pairing, await h.save(pairing));
+  const revoked = await h.api('/api/tv/revoke', { method: 'POST', token: pairing.token, body: {} });
+  assert.equal(revoked.status, 200);
+  assert.equal(revoked.body.device.adbTarget, null);
+  assert.match(revoked.body.code, /^\d{6}$/);
+  assert.equal((await h.command(pairing, { type: 'KEY', key: 'ok' })).status, 404);
+  const next = await h.session('New caregiver');
+  const paired = await h.api('/api/pair', { method: 'POST', cookie: next.cookie, body: { code: revoked.body.code, name: 'TV' } });
+  assert.equal(paired.status, 200);
+  assert.deepEqual((await h.api(`/api/devices/${pairing.deviceId}`, { cookie: next.cookie })).body.commands, []);
+});
+
+test('a command whose body arrives after the TV disconnects is refused', async (t) => {
+  const h = await harness(t);
+  const pairing = await h.pair();
+  const show = await h.save(pairing);
+  const url = new URL(`${h.base()}/api/devices/${pairing.deviceId}/commands`);
+  const request = http.request(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: pairing.cookie } });
+  const response = new Promise((done) => request.on('response', (res) => { let text = ''; res.on('data', (chunk) => { text += chunk; }); res.on('end', () => done({ status: res.statusCode, body: JSON.parse(text) })); }));
+  request.write(`{"type":"OPEN_SHOW","showId":"${show.id}",`);
+  await new Promise((done) => setTimeout(done, 50));
+  await h.api('/api/tv/revoke', { method: 'POST', token: pairing.token, body: {} });
+  request.end('"idempotencyKey":"late"}');
+  assert.equal((await response).status, 404);
+  assert.deepEqual((await h.api('/api/tv/commands', { token: pairing.token })).body.commands, []);
 });
 
 test('store persists hashed credentials and code, not bearer tokens or session secrets', async (t) => {
@@ -281,9 +380,24 @@ test('store persists hashed credentials and code, not bearer tokens or session s
   assert.equal(raw.includes(caregiver.cookie.split('=')[1]), false);
   assert.equal(raw.includes(`"${tv.code}"`), false);
   await h.restart();
-  const paired = await h.api('/api/pair', { method: 'POST', cookie: caregiver.cookie, body: { code: tv.code, name: 'Saved TV' } });
-  assert.equal(paired.status, 200);
-  assert.equal(paired.body.device.online, false);
+  assert.equal((await h.api('/api/pair', { method: 'POST', cookie: caregiver.cookie, body: { code: tv.code, name: 'Saved TV' } })).status, 200);
+});
+
+test('a store from the catalog prototype keeps sessions and pairings', async (t) => {
+  const h = await harness(t);
+  const pairing = await h.pair();
+  const file = join(h.dataDir, 'relay.json');
+  const current = JSON.parse(await readFile(file, 'utf8'));
+  const legacy = {
+    version: 1, sessions: current.sessions, commands: [{ id: 'old', state: 'QUEUED' }],
+    devices: current.devices.map((device) => ({ ...device, foreground: true, quiet: false, playback: null, adbTarget: undefined })),
+  };
+  await writeFile(file, JSON.stringify(legacy));
+  await h.restart();
+  const details = await h.api(`/api/devices/${pairing.deviceId}`, { cookie: pairing.cookie });
+  assert.equal(details.status, 200);
+  assert.deepEqual([details.body.device.adbTarget, details.body.commands], [null, []]);
+  assert.equal(JSON.parse(await readFile(file, 'utf8')).version, 2);
 });
 
 test('pairing brute-force attempts are rate-limited', async (t) => {
@@ -303,141 +417,31 @@ test('cross-site mutations and non-JSON requests are rejected', async (t) => {
   assert.equal((await h.api('/api/session', { method: 'POST', body: { name: 'Intruder' }, headers: { 'content-type': 'text/plain' } })).status, 415);
 });
 
-test('concurrent pairing claims and duplicate sends produce a single authorized effect', async (t) => {
+test('the built web app is served next to the API, without leaving its folder', async (t) => {
+  const web = await mkdtemp(join(tmpdir(), 'mompilot-web-'));
+  t.after(() => rm(web, { recursive: true, force: true }));
+  await writeFile(join(web, 'index.html'), '<!doctype html><title>MomPilot</title>');
+  await writeFile(join(web, 'manifest.webmanifest'), '{}');
+  const h = await harness(t, { staticDir: web });
+  const get = async (path) => { const response = await fetch(`${h.base()}${path}`); return { status: response.status, type: response.headers.get('content-type'), text: await response.text(), headers: response.headers }; };
+  const home = await get('/');
+  assert.match(home.text, /MomPilot/);
+  assert.match(home.headers.get('content-security-policy'), /script-src 'self'/);
+  assert.equal(home.headers.get('x-frame-options'), 'DENY');
+  assert.equal((await get('/manifest.webmanifest')).type, 'application/manifest+json');
+  assert.match((await get('/share?url=https%3A%2F%2Fyoutu.be%2Faqz-KE-bpKQ')).text, /MomPilot/);
+  for (const sneaky of ['/..%2f..%2fpackage.json', '/%2e%2e/%2e%2e/package.json']) {
+    const response = await get(sneaky);
+    assert.match(response.text, /<title>MomPilot/, sneaky);
+  }
+  assert.equal((await h.api('/api/health')).body.ok, true);
+});
+
+test('concurrent pairing claims produce a single owner', async (t) => {
   const h = await harness(t);
   const [first, second, tv] = await Promise.all([h.session('First'), h.session('Second'), h.register()]);
   const claims = await Promise.all([first, second].map((caregiver) => h.api('/api/pair', {
     method: 'POST', cookie: caregiver.cookie, body: { code: tv.code, name: 'Shared TV' },
   })));
   assert.deepEqual(claims.map((claim) => claim.status).sort(), [200, 400]);
-  const owner = claims[0].status === 200 ? first : second;
-  const pairing = { ...owner, ...tv };
-  const sends = await Promise.all([h.send(pairing), h.send(pairing)]);
-  assert.deepEqual(sends.map((response) => response.status).sort(), [200, 201]);
-  assert.equal(sends[0].body.command.id, sends[1].body.command.id);
-  assert.equal((await h.api('/api/tv/commands', { token: tv.token })).body.commands.length, 1);
-});
-
-test('experimental YouTube sends accept only the fixed approved item and preserve idempotency', async (t) => {
-  const h = await harness(t);
-  const pairing = await h.pair();
-  const first = await h.send(pairing, { type: 'OPEN_YOUTUBE' });
-  assert.equal(first.status, 201);
-  assert.equal(first.body.command.type, 'OPEN_YOUTUBE');
-  assert.equal(first.body.command.itemId, 'bunny');
-  const retry = await h.send(pairing, { type: 'OPEN_YOUTUBE' });
-  assert.equal(retry.status, 200);
-  assert.equal(retry.body.command.id, first.body.command.id);
-  assert.equal((await h.send(pairing)).body.error, 'IDEMPOTENCY_CONFLICT');
-  for (const payload of [
-    { itemId: 'sintel' }, { itemId: 'arbitrary-youtube-id' }, { itemId: undefined },
-    { url: 'https://www.youtube.com/watch?v=arbitrary' },
-    { videoId: 'arbitrary' }, { packageName: 'arbitrary.app' },
-    { messageId: 'found-video' }, { foreground: false },
-  ]) {
-    const rejected = await h.send(pairing, { type: 'OPEN_YOUTUBE', idempotencyKey: 'invalid-launch', ...payload });
-    assert.equal(rejected.status, 400);
-  }
-  const pending = await h.api('/api/tv/commands', { token: pairing.token });
-  assert.equal(pending.body.commands.length, 1);
-});
-
-test('YouTube launch acknowledgments require receipt, matching type, and explicit foreground false', async (t) => {
-  const h = await harness(t);
-  const pairing = await h.pair();
-  const { command } = (await h.send(pairing, { type: 'OPEN_YOUTUBE' })).body;
-  const launchAck = (extra = {}) => h.api('/api/tv/ack', {
-    method: 'POST', token: pairing.token, body: { id: command.id, state: 'LAUNCHED', foreground: false, ...extra },
-  });
-  assert.equal((await launchAck()).body.error, 'INVALID_TRANSITION');
-  assert.equal((await h.ack(pairing, command, 'RECEIVED')).status, 200);
-  assert.equal((await h.ack(pairing, command, 'PLAYING')).body.error, 'INVALID_TRANSITION');
-  for (const foreground of [undefined, true, null, 'false']) {
-    assert.equal((await launchAck({ foreground })).body.error, 'INVALID_ACK');
-  }
-  assert.equal((await launchAck({ url: 'https://example.com' })).status, 400);
-  assert.equal((await launchAck({ state: 'RECEIVED' })).body.error, 'INVALID_ACK');
-  const normal = (await h.send(pairing, { idempotencyKey: 'normal-play' })).body.command;
-  const wrongType = await h.api('/api/tv/ack', {
-    method: 'POST', token: pairing.token, body: { id: normal.id, state: 'LAUNCHED', foreground: false },
-  });
-  assert.equal(wrongType.body.error, 'INVALID_TRANSITION');
-  assert.equal((await launchAck()).body.command.state, 'LAUNCHED');
-});
-
-test('YouTube handoff atomically finishes launch, marks offline, pauses own player and cancels competing work', async (t) => {
-  const h = await harness(t);
-  const pairing = await h.pair();
-  await h.api('/api/tv/heartbeat', {
-    method: 'POST', token: pairing.token,
-    body: { foreground: true, playback: { itemId: 'sintel', state: 'PLAYING', position: 8, duration: 52 } },
-  });
-  const launch = (await h.send(pairing, { type: 'OPEN_YOUTUBE' })).body.command;
-  const competing = (await h.send(pairing, { idempotencyKey: 'competing-play' })).body.command;
-  await h.ack(pairing, launch, 'RECEIVED');
-  await h.ack(pairing, competing, 'RECEIVED');
-  const launchAck = () => h.api('/api/tv/ack', {
-    method: 'POST', token: pairing.token, body: { id: launch.id, state: 'LAUNCHED', foreground: false },
-  });
-  const launched = await launchAck();
-  assert.equal(launched.status, 200);
-  assert.equal(launched.body.command.state, 'LAUNCHED');
-  let details = (await h.api(`/api/devices/${pairing.deviceId}`, { cookie: pairing.cookie })).body;
-  assert.equal(details.device.foreground, false);
-  assert.equal(details.device.online, false);
-  assert.deepEqual(details.device.playback, { itemId: 'sintel', state: 'PAUSED', position: 8, duration: 52 });
-  assert.equal(details.commands.find((entry) => entry.id === competing.id).state, 'FAILED');
-  assert.deepEqual((await h.api('/api/tv/commands', { token: pairing.token })).body.commands, []);
-  assert.equal((await h.send(pairing, { idempotencyKey: 'offline-play' })).body.error, 'DEVICE_UNAVAILABLE');
-  assert.equal((await h.send(pairing, { type: 'OPEN_YOUTUBE' })).body.command.state, 'LAUNCHED');
-  assert.equal((await launchAck()).status, 200);
-
-  h.advance(1000);
-  await h.api('/api/tv/heartbeat', {
-    method: 'POST', token: pairing.token,
-    body: { foreground: true, playback: { itemId: 'sintel', state: 'PLAYING', position: 9, duration: 52 } },
-  });
-  const newer = (await h.send(pairing, { idempotencyKey: 'after-return' })).body.command;
-  const repeated = await launchAck();
-  assert.deepEqual(repeated.body.command, launched.body.command);
-  details = (await h.api(`/api/devices/${pairing.deviceId}`, { cookie: pairing.cookie })).body;
-  assert.equal(details.device.foreground, true);
-  assert.equal(details.device.online, true);
-  assert.equal(details.device.playback.state, 'PLAYING');
-  assert.equal(details.commands.find((entry) => entry.id === newer.id).state, 'QUEUED');
-});
-
-test('YouTube launch completion needs current foreground presence and failure remains an ordinary result', async (t) => {
-  const h = await harness(t);
-  const pairing = await h.pair();
-  const { command } = (await h.send(pairing, { type: 'OPEN_YOUTUBE' })).body;
-  await h.ack(pairing, command, 'RECEIVED');
-  h.advance(15_000);
-  const stale = await h.api('/api/tv/ack', {
-    method: 'POST', token: pairing.token, body: { id: command.id, state: 'LAUNCHED', foreground: false },
-  });
-  assert.equal(stale.status, 409);
-  assert.equal(stale.body.error, 'DEVICE_UNAVAILABLE');
-  const failed = await h.ack(pairing, command, 'FAILED', 'YouTube is not installed on this TV.');
-  assert.equal(failed.body.command.state, 'FAILED');
-  assert.equal(failed.body.command.reason, 'YouTube is not installed on this TV.');
-});
-
-test('unconfirmed YouTube launches expire without claiming the external app stayed closed', async (t) => {
-  const h = await harness(t, { commandTtlMs: 1000 });
-  const pairing = await h.pair();
-  const { command } = (await h.send(pairing, { type: 'OPEN_YOUTUBE' })).body;
-  await h.ack(pairing, command, 'RECEIVED');
-  h.advance(1000);
-  const expired = (await h.send(pairing, { type: 'OPEN_YOUTUBE' })).body.command;
-  assert.equal(expired.state, 'EXPIRED');
-  assert.match(expired.reason, /launch result is unconfirmed/i);
-  assert.match(expired.reason, /external app may have opened/i);
-  const late = await h.api('/api/tv/ack', {
-    method: 'POST', token: pairing.token, body: { id: command.id, state: 'LAUNCHED', foreground: false },
-  });
-  assert.equal(late.body.error, 'COMMAND_FINISHED');
-  const details = (await h.api(`/api/devices/${pairing.deviceId}`, { cookie: pairing.cookie })).body;
-  assert.equal(details.device.foreground, true);
-  assert.deepEqual((await h.api('/api/tv/commands', { token: pairing.token })).body.commands, []);
 });

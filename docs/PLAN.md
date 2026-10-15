@@ -2,6 +2,8 @@
 
 9 October 2026 · Goes with [PRD.md](PRD.md) · Deadline 23 October 2026, 12:00 PM PT (24 October, 12:30 AM IST)
 
+**Status, 14 October:** server, phone app and TV app are built (35 automated tests; signed release APK). Not yet run against a real Fire TV. Next: set up with [DEPLOY.md](DEPLOY.md) and work through [CHECKLIST.md](CHECKLIST.md). HTTPS now comes from `tailscale serve`.
+
 ## 1. Recommendation in one paragraph
 
 Use **ADB over Tailscale** from a small always-on MomPilot server to drive Mom's Fire OS stick. ADB can open a specific show in YouTube, Netflix or Prime Video and press any remote key, from any network. Keep a small **MomPilot TV app** on the stick: it is the Fire TV app the hackathon needs, handles pairing, and can open shows itself if ADB is ever unavailable. The son uses a **phone web app** with his saved shows and a remote pad. Everything except Vega OS devices is covered, and no part depends on Amazon or the streaming apps adding features.

@@ -1,6 +1,14 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+}
+
+// Release signing comes from android/keystore.properties (not in git). See android/README.md.
+val keystore = Properties().apply {
+    val file = rootProject.file("keystore.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
 }
 
 android {
@@ -10,13 +18,24 @@ android {
         applicationId = "com.mompilot.tv"
         minSdk = 22
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
-        manifestPlaceholders["allowCleartext"] = "false"
+        versionCode = 2
+        versionName = "0.2.0"
+    }
+    signingConfigs {
+        if (keystore.isNotEmpty()) {
+            create("release") {
+                storeFile = rootProject.file(keystore.getProperty("storeFile"))
+                storePassword = keystore.getProperty("storePassword")
+                keyAlias = keystore.getProperty("keyAlias")
+                keyPassword = keystore.getProperty("keyPassword")
+            }
+        }
     }
     buildTypes {
-        debug { manifestPlaceholders["allowCleartext"] = "true" }
-        release { isMinifyEnabled = false }
+        release {
+            isMinifyEnabled = false
+            if (keystore.isNotEmpty()) signingConfig = signingConfigs.getByName("release")
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
