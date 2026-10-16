@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createAdb } from './adb.mjs';
 import { createRelay } from './relay.mjs';
+import { createTailnet } from './tailnet.mjs';
 
 const host = process.env.HOST || '127.0.0.1';
 const port = Number(process.env.PORT || 8787);
@@ -20,14 +21,22 @@ function findAdb() {
   return sdks.map((sdk) => join(sdk, 'platform-tools', exe)).find((path) => existsSync(path)) || 'adb';
 }
 
-// After `npm run build`, the same process also serves the phone app.
+// After `npm run build`, the same process also serves the phone web app; built Android apps are offered too.
 const web = resolve('dist');
 const adbPath = findAdb();
+const built = (variable, path) => [process.env[variable], resolve(path)].find((file) => file && existsSync(file)) || null;
+const tvApk = built('TV_APK', 'android/app/build/outputs/apk/release/app-release.apk');
+const phoneApk = built('PHONE_APK', 'android/phone/build/outputs/apk/release/phone-release.apk');
 const { server } = createRelay({
   dataDir: resolve(process.env.MOMPILOT_DATA_DIR || '.local'),
   adb: createAdb({ adbPath }),
+  tailnet: createTailnet({ tailscalePath: process.env.TAILSCALE_PATH || 'tailscale' }),
   staticDir: existsSync(resolve(web, 'index.html')) ? web : null,
+  publicUrl: process.env.PUBLIC_URL || null,
+  tvApk,
+  phoneApk,
 });
+console.log(`TV app for setup: ${tvApk || 'not built'} · Android phone app download: ${phoneApk || 'not built'}`);
 server.on('error', (error) => { console.error(`MomPilot server: ${error.message}`); process.exitCode = 1; });
 server.listen(port, host, () => {
   console.log(`MomPilot server: http://${host}:${port} (adb: ${adbPath})`);

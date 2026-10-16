@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { LinkError, launchFor, parseLink, resolveLink } from '../server/shows.mjs';
+import { LinkError, launchFor, mostMentionedGti, parseLink, resolveLink } from '../server/shows.mjs';
 
 const GTI = 'amzn1.dv.gti.4eb5d9a6-1f60-4b63-8b10-0123456789ab';
 
@@ -61,6 +61,24 @@ test('launch intents match the Fire OS commands in the plan', () => {
   const netflix = launchFor({ app: 'netflix', contentId: '80057281' });
   assert.deepEqual([netflix.component, netflix.data, netflix.flags, netflix.extras, netflix.forceStop],
     ['com.netflix.ninja/.MainActivity', 'netflix://title/80057281', 0x10000020, { amzn_deeplink_data: '80057281' }, 'com.netflix.ninja']);
-  assert.equal(launchFor({ app: 'prime', contentId: GTI }).data, `https://app.primevideo.com/detail?gti=${GTI}`);
-  assert.equal(launchFor({ app: 'prime', contentId: 'B0B8TQ5H8C' }).component, 'com.amazon.firebat/com.amazon.firebatcore.deeplink.DeepLinkRoutingActivity');
+  assert.deepEqual(launchFor({ app: 'prime', contentId: GTI }), {
+    action: 'android.intent.action.VIEW', data: `amzn://avod/watch?gti=${GTI}`, package: 'com.amazon.firebat',
+  });
+  // Web title IDs don't open in the Fire TV app (error 5004), so they must be looked up first.
+  assert.throws(() => launchFor({ app: 'prime', contentId: 'B0B8TQ5H8C' }), LinkError);
+});
+
+test('Prime Video web title IDs are looked up to the gti the TV app needs', async () => {
+  const OTHER = 'amzn1.dv.gti.11111111-2222-3333-4444-555555555555';
+  const page = `<title>Prime Video: Khalifa</title> ${GTI} ${GTI} ${OTHER} ${GTI} related ${OTHER}`;
+  assert.equal(mostMentionedGti(page), GTI);
+  assert.equal(mostMentionedGti('<html>no ids</html>'), null);
+  const requested = [];
+  const fetchImpl = async (url) => { requested.push(String(url)); return { ok: true, text: async () => page }; };
+  assert.deepEqual(await resolveLink('https://www.primevideo.com/detail/0GYXUMEVVOI5XBNYFQICTRGF05?ref_=atv_dp_share_cu_r', fetchImpl), { app: 'prime', contentId: GTI });
+  assert.deepEqual(requested, ['https://www.primevideo.com/detail/0GYXUMEVVOI5XBNYFQICTRGF05']);
+  // Links that already carry a gti need no lookup.
+  assert.deepEqual(await resolveLink(`https://app.primevideo.com/detail?gti=${GTI}`, () => assert.fail('no lookup')), { app: 'prime', contentId: GTI });
+  await assert.rejects(resolveLink('https://www.primevideo.com/detail/0GYXUMEVVOI5XBNYFQICTRGF05', async () => ({ ok: false })), LinkError);
+  await assert.rejects(resolveLink('https://www.primevideo.com/detail/0GYXUMEVVOI5XBNYFQICTRGF05', async () => { throw new Error('offline'); }), LinkError);
 });

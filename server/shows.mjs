@@ -42,19 +42,48 @@ export function parseLink(value) {
   return reject();
 }
 
-/** Follows redirects for Amazon short links (amzn.in/d/…) before parsing; other links are parsed directly. */
+/**
+ * Turns a link into `{app, contentId}`, following Amazon short links (amzn.in/d/…) first.
+ * Prime Video share links carry a web title ID, but the Fire TV app only opens a title by its
+ * gti, so that is looked up from the title's public page.
+ */
 export async function resolveLink(value, fetchImpl = fetch) {
   let current = String(value).trim();
   for (let hop = 0; hop < 5; hop++) {
     let url;
     try { url = new URL(current); } catch { reject(); }
-    if (!SHORT_LINK_HOSTS.has(host(url))) return parseLink(current);
+    if (!SHORT_LINK_HOSTS.has(host(url))) {
+      const parsed = parseLink(current);
+      if (parsed.app === 'prime' && !PRIME_GTI.test(parsed.contentId)) return { app: 'prime', contentId: await primeGti(parsed.contentId, fetchImpl) };
+      return parsed;
+    }
     const response = await fetchImpl(url, { method: 'HEAD', redirect: 'manual', signal: AbortSignal.timeout(5000) });
     const next = response.headers.get('location');
     if (!next) reject();
     current = new URL(next, url).href;
   }
   return reject();
+}
+
+/** The title's own gti is the one its page mentions most; related titles appear only a few times each. */
+export function mostMentionedGti(html) {
+  const counts = new Map();
+  for (const [gti] of html.matchAll(/amzn1\.dv\.gti\.[0-9a-f-]{36}/g)) counts.set(gti, (counts.get(gti) || 0) + 1);
+  return [...counts].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+}
+
+async function primeGti(id, fetchImpl) {
+  let html = '';
+  try {
+    const response = await fetchImpl(`https://www.primevideo.com/detail/${id}`, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36', 'Accept-Language': 'en-IN,en;q=0.9' },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (response.ok) html = await response.text();
+  } catch { /* Reported below. */ }
+  const gti = mostMentionedGti(html);
+  if (!gti) throw new LinkError('Couldn’t look up this Prime Video title. Check the link and try again.');
+  return gti;
 }
 
 /** Picture for a saved show, where one is freely available. */
@@ -76,10 +105,10 @@ export function launchFor({ app, contentId }) {
     };
   }
   if (app === 'prime') {
-    const data = contentId.startsWith('amzn1.dv.gti.')
-      ? `https://app.primevideo.com/detail?gti=${contentId}`
-      : `https://app.primevideo.com/detail/${contentId}`;
-    return { component: 'com.amazon.firebat/com.amazon.firebatcore.deeplink.DeepLinkRoutingActivity', action: 'android.intent.action.VIEW', data };
+    // Verified on Fire OS 7.7.1.7: starts (or resumes) playback straight away.
+    // https://app.primevideo.com/detail?gti=… only opens the title's page.
+    if (!PRIME_GTI.test(contentId)) throw new LinkError('Save this Prime Video show again so it can be looked up.');
+    return { action: 'android.intent.action.VIEW', data: `amzn://avod/watch?gti=${contentId}`, package: APPS.prime.package };
   }
   throw new LinkError('Unsupported app.');
 }

@@ -15,7 +15,7 @@ object Launcher {
         "com.netflix.ninja" to "Netflix",
         "com.amazon.firebat" to "Prime Video",
     )
-    private val SCHEMES = setOf("https", "netflix")
+    private val SCHEMES = setOf("https", "netflix", "amzn")
 
     class Refused(message: String) : Exception(message)
 

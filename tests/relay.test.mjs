@@ -19,20 +19,33 @@ function fakeAdb() {
   const calls = [];
   let failure = null;
   let delay = 0;
-  const call = (name, result) => async (...args) => {
+  let snapshotBytes = Buffer.from('fake-png'.repeat(20));
+  const call = (name, value) => async (...args) => {
     calls.push([name, ...args]);
     if (delay) await new Promise((done) => setTimeout(done, delay));
     if (failure) throw new AdbError(failure, `fake ${failure}`);
-    return result;
+    return value;
   };
-  return {
+  const result = {
     calls,
     failWith: (code) => { failure = code; },
     slow: (ms) => { delay = ms; },
     key: call('key'), open: call('open'), openApp: call('openApp'), wake: call('wake'),
     status: call('status', { awake: true, app: 'home', package: 'com.amazon.tv.launcher' }),
-    snapshot: call('snapshot', Buffer.from('fake-png')),
+    snapshot: async (...args) => { calls.push(['snapshot', ...args]); if (failure) throw new AdbError(failure, `fake ${failure}`); return snapshotBytes; },
+    blankSnapshot: () => { snapshotBytes = Buffer.alloc(0); },
+    // Setup: what the TV reports, and the last configuration it was given.
+    tv: { manufacturer: 'Amazon', model: 'AFTSS', os: 'Fire OS 7.7.1.7', hasApp: true },
+    describe: async (...args) => { calls.push(['describe', ...args]); if (failure) throw new AdbError(failure, `fake ${failure}`); return { ...fake.tv }; },
+    install: call('install'),
+    configure: async (...args) => { calls.push(['configure', ...args]); if (failure || fake.refuseSetup) throw new AdbError(fake.refuseSetup || failure, 'fake'); fake.configured = args[1]; },
   };
+  const fake = result;
+  return result;
+}
+
+function fakeTailnet(devices = [], url = 'https://mompilot-server.tail1234.ts.net') {
+  return { publicUrl: async () => url, androidDevices: async () => devices };
 }
 
 async function harness(t, options = {}) {
@@ -43,7 +56,7 @@ async function harness(t, options = {}) {
   let relay;
   let base;
   async function start() {
-    relay = createRelay({ dataDir, now: () => time, rateLimit: false, adb, resolve: async (link) => parseLink(link), ...options });
+    relay = createRelay({ dataDir, now: () => time, rateLimit: false, adb, resolve: async (link) => parseLink(link), tailnet: fakeTailnet(), ...options });
     await new Promise((done) => relay.server.listen(0, '127.0.0.1', done));
     base = `http://127.0.0.1:${relay.server.address().port}`;
   }
@@ -323,7 +336,10 @@ test('device details include ADB status, and snapshots return the TV screen as P
   assert.equal(details.body.device.appOnline, true);
   const snapshot = await h.api(`/api/devices/${pairing.deviceId}/snapshot`, { cookie: pairing.cookie });
   assert.equal(snapshot.type, 'image/png');
-  assert.equal(snapshot.body.toString(), 'fake-png');
+  assert.equal(snapshot.body.toString(), 'fake-png'.repeat(20));
+  h.adb.blankSnapshot();
+  const blocked = await h.api(`/api/devices/${pairing.deviceId}/snapshot`, { cookie: pairing.cookie });
+  assert.deepEqual([blocked.status, blocked.body.error], [409, 'SNAPSHOT_BLOCKED']);
 });
 
 test('a slow ADB status check does not hold up device details after the first check', async (t) => {
@@ -435,6 +451,87 @@ test('the built web app is served next to the API, without leaving its folder', 
     assert.match(response.text, /<title>MomPilot/, sneaky);
   }
   assert.equal((await h.api('/api/health')).body.ok, true);
+});
+
+test('nearby lists Android devices on the tailnet, TVs with ADB first, and marks ones already added', async (t) => {
+  const h = await harness(t, { tailnet: fakeTailnet([
+    { name: 'POCO F1', address: '100.79.216.34', adb: false },
+    { name: 'Mom’s Fire TV', address: '100.121.36.62', adb: true },
+  ]) });
+  const caregiver = await h.session();
+  assert.equal((await h.api('/api/tvs/nearby')).status, 401);
+  const first = await h.api('/api/tvs/nearby', { cookie: caregiver.cookie });
+  assert.deepEqual(first.body.tvs, [
+    { name: 'Mom’s Fire TV', address: '100.121.36.62:5555', adb: true, added: false },
+    { name: 'POCO F1', address: '100.79.216.34:5555', adb: false, added: false },
+  ]);
+  await h.api('/api/tvs/setup', { method: 'POST', cookie: caregiver.cookie, body: { address: '100.121.36.62' } });
+  assert.equal((await h.api('/api/tvs/nearby', { cookie: caregiver.cookie })).body.tvs[0].added, true);
+});
+
+test('setting up a TV gives the TV app this server and a working credential, with no codes', async (t) => {
+  const h = await harness(t);
+  const caregiver = await h.session();
+  const setup = (body, cookie = caregiver.cookie) => h.api('/api/tvs/setup', { method: 'POST', cookie, body });
+  assert.equal((await setup({ address: 'evil.example:22' })).body.error, 'INVALID_ADB_TARGET');
+
+  const created = await setup({ address: '100.121.36.62', name: 'Mom’s TV', serverUrl: 'http://localhost:8787' });
+  assert.equal(created.status, 201);
+  assert.deepEqual([created.body.device.adbTarget, created.body.device.name, created.body.device.paired], ['100.121.36.62:5555', 'Mom’s TV', true]);
+  // Localhost is no use to the TV, so the server's own Tailscale address is used.
+  assert.equal(h.adb.configured.server, 'https://mompilot-server.tail1234.ts.net');
+  const poll = await h.api('/api/tv/commands', { token: h.adb.configured.token });
+  assert.deepEqual([poll.status, poll.body.device.id, poll.body.device.caregiver.name], [200, created.body.device.id, 'Varish']);
+  assert.equal((await h.api('/api/devices', { cookie: caregiver.cookie })).body.devices.length, 1);
+
+  // Setting the same TV up again keeps the device and replaces the TV's credential.
+  const oldToken = h.adb.configured.token;
+  const again = await setup({ address: '100.121.36.62:5555', serverUrl: 'https://my-win.tail4d01fc.ts.net' });
+  assert.deepEqual([again.status, again.body.device.id], [200, created.body.device.id]);
+  assert.equal(h.adb.configured.server, 'https://my-win.tail4d01fc.ts.net');
+  assert.equal((await h.api('/api/tv/commands', { token: oldToken })).status, 401);
+  assert.equal((await h.api('/api/tv/commands', { token: h.adb.configured.token })).status, 200);
+
+  // Someone else can't take it over while it's connected.
+  const other = await h.session('Someone else');
+  assert.equal((await setup({ address: '100.121.36.62' }, other.cookie)).body.error, 'TV_ALREADY_CONNECTED');
+});
+
+test('TV setup asks for Allow, refuses non-Fire TVs, installs the TV app when missing, and rolls back failures', async (t) => {
+  const h = await harness(t, { tvApk: '/builds/mompilot-tv.apk' });
+  const caregiver = await h.session();
+  const setup = () => h.api('/api/tvs/setup', { method: 'POST', cookie: caregiver.cookie, body: { address: '100.121.36.62' } });
+
+  h.adb.failWith('ADB_UNAUTHORIZED');
+  const waiting = await setup();
+  assert.deepEqual([waiting.status, waiting.body.error], [502, 'ADB_UNAUTHORIZED']);
+  h.adb.failWith(null);
+
+  h.adb.tv = { manufacturer: 'Xiaomi', model: 'POCO F1', os: '', hasApp: false };
+  assert.equal((await setup()).body.error, 'NOT_FIRE_TV');
+
+  h.adb.tv = { manufacturer: 'Amazon', model: 'AFTSS', os: 'Fire OS 7.7.1.7', hasApp: false };
+  h.adb.refuseSetup = 'ADB_SETUP_FAILED';
+  assert.equal((await setup()).body.error, 'ADB_SETUP_FAILED');
+  assert.deepEqual((await h.api('/api/devices', { cookie: caregiver.cookie })).body.devices, []);
+  assert.ok(h.adb.calls.some(([name, target, apk]) => name === 'install' && target === '100.121.36.62:5555' && apk === '/builds/mompilot-tv.apk'));
+
+  h.adb.refuseSetup = null;
+  assert.equal((await setup()).status, 201);
+});
+
+test('TV setup without a TV app to install, or without a server address, says what to do', async (t) => {
+  const h = await harness(t, { tailnet: fakeTailnet([], null) });
+  const caregiver = await h.session();
+  const setup = (body) => h.api('/api/tvs/setup', { method: 'POST', cookie: caregiver.cookie, body });
+  assert.equal((await setup({ address: '100.121.36.62', serverUrl: 'http://127.0.0.1:8787' })).body.error, 'NO_SERVER_ADDRESS');
+  h.adb.tv = { manufacturer: 'Amazon', model: 'AFTSS', os: '', hasApp: false };
+  assert.equal((await setup({ address: '100.121.36.62', serverUrl: 'https://my-win.tail4d01fc.ts.net' })).body.error, 'TV_APP_MISSING');
+});
+
+test('the server reports its public address, preferring PUBLIC_URL', async (t) => {
+  assert.equal((await (await harness(t)).api('/api/server')).body.publicUrl, 'https://mompilot-server.tail1234.ts.net');
+  assert.equal((await (await harness(t, { publicUrl: 'https://mompilot.example' })).api('/api/server')).body.publicUrl, 'https://mompilot.example');
 });
 
 test('concurrent pairing claims produce a single owner', async (t) => {

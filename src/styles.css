@@ -202,3 +202,27 @@ input.code { font-size: 1.6rem; letter-spacing: 0.4em; text-align: center; font-
 
 /* Shown if the app hits an unexpected error */
 .crash { gap: 12px; }
+
+/* Adding a TV */
+.tv-list { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 8px; }
+.tv-option { width: 100%; display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); text-align: left; }
+.tv-option span { display: grid; gap: 2px; }
+.tv-option small { color: var(--muted); }
+.tv-option:not(:disabled):active { background: var(--coral-soft); }
+.setup-status { display: flex; gap: 10px; align-items: center; margin: 12px 0; font-weight: 600; }
+.link-code .qr { width: 200px; height: 200px; image-rendering: pixelated; }
+
+/* Finding a saved show */
+.show-filter { display: grid; gap: 10px; margin-bottom: 12px; }
+.app-filter { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; padding: 4px; border-radius: 999px; background: var(--card); border: 1px solid var(--line); }
+.app-filter button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 38px; padding: 0 8px; border: 0; border-radius: 999px; background: none; font-size: 0.9rem; font-weight: 500; white-space: nowrap; }
+.app-filter button[aria-pressed='true'] { background: var(--coral); color: #fff; font-weight: 600; }
+.app-filter .app-dot { width: 8px; height: 8px; border-radius: 50%; }
+.app-dot.youtube { background: #e53935; }
+.app-dot.netflix { background: #141414; }
+.app-dot.prime { background: #1a98ff; }
+.app-filter button[aria-pressed='true'] .app-dot { background: #fff; }
+.search { display: flex; align-items: center; gap: 8px; padding: 0 6px 0 16px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); color: var(--muted); }
+.search input { border: 0; min-height: 44px; padding: 0; background: none; }
+.search input:focus { outline: none; }
+.search:focus-within { outline: 3px solid var(--coral); outline-offset: 2px; }

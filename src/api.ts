@@ -59,3 +59,4 @@ export function tvStatus(details: Details | null): { text: string; tone: 'good' 
   if (device.appOnline) return { text: adb.state === 'NOT_SET' ? 'MomPilot app is open' : 'Remote unavailable', tone: 'warn' };
   return { text: 'Can’t reach the TV', tone: 'bad' };
 }
+export type NearbyTv = { name: string; address: string; adb: boolean; added: boolean };

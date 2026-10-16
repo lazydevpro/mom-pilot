@@ -29,7 +29,7 @@ function sharedDraft(): Draft | null {
 const LAUNCH_HINTS: Record<AppId, string> = {
   youtube: '',
   netflix: ' If Netflix asks who’s watching, press OK on the remote.',
-  prime: ' Press OK on the remote to start it.',
+  prime: '',
 };
 
 export default function App() {

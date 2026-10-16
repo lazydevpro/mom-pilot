@@ -6,7 +6,7 @@ A small Android app for Mom's Fire TV Stick. It:
 - keeps running in the background (a foreground service that starts again after a reboot) and opens a show in YouTube, Netflix or Prime Video when the server asks and ADB isn't available;
 - lets Mom disconnect, and change the server address.
 
-Remote button presses don't go through this app: since 2024, Fire OS blocks apps from using the TV's own ADB, so the server sends them over ADB directly. The app only ever opens YouTube (`com.amazon.firetv.youtube`), Netflix (`com.netflix.ninja`) and Prime Video (`com.amazon.firebat`), and accepts only `https` and `netflix` links.
+Remote button presses don't go through this app: since 2024, Fire OS blocks apps from using the TV's own ADB, so the server sends them over ADB directly. The app only ever opens YouTube (`com.amazon.firetv.youtube`), Netflix (`com.netflix.ninja`) and Prime Video (`com.amazon.firebat`), and accepts only `https`, `netflix` and `amzn` (Prime Video) links.
 
 Fire OS only: Vega OS sticks (Fire TV Stick 4K Select, Fire TV Stick HD 2nd Gen) can't install APKs.
 

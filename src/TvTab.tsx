@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Check, CircleAlert, LoaderCircle, Plus } from 'lucide-react';
-import { APP_NAMES, patch, post, relativeTime, type Details, type Device } from './api';
+import qrcode from 'qrcode-generator';
+import { Check, CircleAlert, LoaderCircle, Plus, Tv } from 'lucide-react';
+import { APP_NAMES, api, patch, post, relativeTime, type ApiError, type Details, type Device, type NearbyTv } from './api';
 
 const ADB_HELP: Record<string, string> = {
-  NOT_SET: 'Not set up. Add the TV’s address below.',
+  NOT_SET: 'Not set up. Add the TV again from the list.',
   ADB_UNAUTHORIZED: 'Waiting for Allow on the TV. Tick “Always allow” and press Allow.',
 };
 
@@ -28,10 +29,10 @@ export function TvTab({ name, devices, details, selectedId, onSelect, onPaired, 
           <Connection details={details} />
           <TvSettings key={details.device.id} device={details.device} onSaved={onChanged} />
           <Activity details={details} />
-          <button className="secondary full" onClick={() => setPairing(true)}><Plus size={18} />Connect another TV</button>
+          <button className="secondary full" onClick={() => setPairing(true)}><Plus size={18} />Add another TV</button>
         </>
       )}
-      {pairing && <PairTv canCancel={devices.length > 0} onCancel={() => setPairing(false)} onPaired={(id) => { setPairing(false); onPaired(id); }} />}
+      {pairing && <AddTv canCancel={devices.length > 0} onCancel={() => setPairing(false)} onAdded={(id) => { setPairing(false); onPaired(id); }} />}
       <Profile name={name} onRenamed={onRenamed} />
       <LinkPhone />
     </section>
@@ -39,27 +40,40 @@ export function TvTab({ name, devices, details, selectedId, onSelect, onPaired, 
 }
 
 function LinkPhone() {
-  const [link, setLink] = useState<{ code: string; expiresAt: string } | null>(null);
+  const [link, setLink] = useState<{ code: string; qr: string } | null>(null);
   const [error, setError] = useState('');
   return (
     <div className="card">
       <h2>Your phones</h2>
       <p className="hint">
-        To use MomPilot on another phone, or as a home-screen app (Safari: Share → Add to Home Screen; Chrome: menu → Add to Home screen),
-        open it there, choose “Already use MomPilot on another phone?” and enter a code from here.
+        Android: install the MomPilot app (<a href="/download/mompilot.apk">download</a>), open it and scan this code.
+        iPhone: open this page in Safari, choose “Already use MomPilot on another phone?” and enter the code.
       </p>
       {link ? (
-        <p className="link-code" aria-live="polite"><strong>{link.code.replace(/(\d{3})/, '$1 ')}</strong><small>Valid for 10 minutes, once.</small></p>
+        <div className="link-code" aria-live="polite">
+          <img className="qr" src={link.qr} alt="Code to scan with the MomPilot app" width={200} height={200} />
+          <strong>{link.code.replace(/(d{3})/, '$1 ')}</strong><small>Valid for 10 minutes, once.</small>
+        </div>
       ) : (
         <button className="secondary full" onClick={async () => {
           setError('');
-          try { setLink(await post<{ code: string; expiresAt: string }>('/session/link')); }
-          catch (failure) { setError((failure as Error).message); }
+          try {
+            const [{ code }, { publicUrl }] = await Promise.all([post<{ code: string }>('/session/link'), api<{ publicUrl: string | null }>('/server')]);
+            const target = `mompilot://join?server=${encodeURIComponent(publicUrl || location.origin)}&code=${code}`;
+            setLink({ code, qr: qrDataUrl(target) });
+          } catch (failure) { setError((failure as Error).message); }
         }}>Add another phone</button>
       )}
       {error && <p className="form-error" role="alert">{error}</p>}
     </div>
   );
+}
+
+function qrDataUrl(text: string) {
+  const qr = qrcode(0, 'M');
+  qr.addData(text);
+  qr.make();
+  return qr.createDataURL(6, 2);
 }
 
 function Connection({ details }: { details: Details }) {
@@ -132,29 +146,69 @@ function Activity({ details }: { details: Details }) {
   );
 }
 
-function PairTv({ canCancel, onCancel, onPaired }: { canCancel: boolean; onCancel: () => void; onPaired: (id: string) => void }) {
-  const [code, setCode] = useState('');
-  const [tvName, setTvName] = useState('Mom’s TV');
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
+/** Adds a TV with no codes: pick it from the Tailscale list (or type its address); the server sets it up over ADB. */
+function AddTv({ canCancel, onCancel, onAdded }: { canCancel: boolean; onCancel: () => void; onAdded: (id: string) => void }) {
+  const [tvs, setTvs] = useState<NearbyTv[] | null>(null);
+  const [address, setAddress] = useState('');
+  const [status, setStatus] = useState<{ busy: boolean; text: string; bad?: boolean } | null>(null);
+  const find = async () => {
+    setTvs(null);
+    try { setTvs((await api<{ tvs: NearbyTv[] }>('/tvs/nearby')).tvs); } catch { setTvs([]); }
+  };
+  useEffect(() => { void find(); }, []);
+
+  async function setup(target: string, tvName?: string) {
+    setStatus({ busy: true, text: 'Connecting to the TV…' });
+    const deadline = Date.now() + 120_000;
+    for (;;) {
+      try {
+        const { device } = await post<{ device: Device }>('/tvs/setup', { address: target, serverUrl: location.origin, ...(tvName ? { name: tvName.slice(0, 60) } : {}) });
+        setStatus(null);
+        onAdded(device.id);
+        return;
+      } catch (failure) {
+        const error = failure as ApiError;
+        if (error.code === 'ADB_UNAUTHORIZED' && Date.now() < deadline) {
+          setStatus({ busy: true, text: 'On the TV: tick “Always allow from this computer”, then press Allow.' });
+          await new Promise((done) => setTimeout(done, 3000));
+          continue;
+        }
+        setStatus({ busy: false, text: error.message, bad: true });
+        return;
+      }
+    }
+  }
+
   return (
-    <form className="card form" onSubmit={async (event) => {
-      event.preventDefault(); setBusy(true); setError('');
-      try { onPaired((await post<{ device: Device }>('/pair', { code, name: tvName })).device.id); }
-      catch (failure) { setError((failure as Error).message); }
-      finally { setBusy(false); }
-    }}>
-      <h1>Connect Mom’s TV</h1>
-      <p>Open MomPilot on the TV and enter the six-digit code it shows.</p>
-      <label htmlFor="pair-code">Code on the TV</label>
-      <input id="pair-code" className="code" value={code} inputMode="numeric" autoComplete="one-time-code" maxLength={6} placeholder="000000"
-        onChange={(event) => setCode(event.target.value.replace(/\D/g, ''))} required />
-      <label htmlFor="pair-name">TV name</label>
-      <input id="pair-name" value={tvName} maxLength={60} onChange={(event) => setTvName(event.target.value)} required />
-      {error && <p className="form-error" role="alert">{error}</p>}
-      <button className="primary full" disabled={busy || code.length !== 6 || !tvName.trim()}>{busy && <LoaderCircle className="spin" size={18} />}Connect</button>
-      {canCancel && <button type="button" className="text-button" onClick={onCancel}>Cancel</button>}
-    </form>
+    <div className="card form">
+      <h1>Add Mom’s TV</h1>
+      <p className="hint">Open MomPilot on the TV, then pick it below. If the TV asks “Allow USB debugging?”, tick “Always allow” and press Allow.</p>
+      {status?.busy ? (
+        <p className="setup-status"><LoaderCircle className="spin" size={18} />{status.text}</p>
+      ) : (
+        <>
+          <div className="section-head"><h2>On your Tailscale network</h2><button className="text-button" onClick={find}>Look again</button></div>
+          {tvs === null ? <LoaderCircle className="spin" size={18} /> : tvs.length === 0 ? <p className="hint">No Android devices found. Is Tailscale on and signed in on the TV?</p> : (
+            <ul className="tv-list">
+              {tvs.map((tv) => (
+                <li key={tv.address}>
+                  <button className="tv-option" disabled={!tv.adb || tv.added} onClick={() => setup(tv.address, tv.name)}>
+                    <Tv size={22} /><span><strong>{tv.name}</strong><small>{tv.added ? 'Already added' : tv.adb ? 'Ready · tap to add' : 'ADB debugging is off, or not a TV'}</small></span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <label htmlFor="tv-new-address">Or type its Tailscale address</label>
+          <div className="input-row">
+            <input id="tv-new-address" value={address} inputMode="url" autoComplete="off" spellCheck={false} placeholder="100.101.102.103" onChange={(event) => setAddress(event.target.value)} />
+            <button className="secondary" disabled={!address.trim()} onClick={() => setup(address.trim())}>Add</button>
+          </div>
+          {status?.bad && <p className="form-error" role="alert">{status.text}</p>}
+          {canCancel && <button type="button" className="text-button" onClick={onCancel}>Cancel</button>}
+        </>
+      )}
+    </div>
   );
 }
 

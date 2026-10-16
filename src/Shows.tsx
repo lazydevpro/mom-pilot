@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ClipboardPaste, LoaderCircle, Play, Plus, Trash2 } from 'lucide-react';
+import { ClipboardPaste, LoaderCircle, Play, Plus, Search, Trash2, X } from 'lucide-react';
 import { APP_NAMES, post, remove, type AppId, type Show } from './api';
 import { Sheet } from './Sheet';
 
@@ -13,6 +13,10 @@ export function Shows({ shows, busyId, hasTv, onPlay, onAdd, onOpenApp, onDelete
   onDeleted: (id: string) => void; onError: (text: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
+  const [query, setQuery] = useState('');
+  const [appFilter, setAppFilter] = useState<AppId | null>(null);
+  const apps = [...new Set(shows.map((show) => show.app))];
+  const visible = shows.filter((show) => (!appFilter || show.app === appFilter) && show.title.toLowerCase().includes(query.trim().toLowerCase()));
 
   async function deleteShow(show: Show) {
     try { await remove(`/shows/${show.id}`); onDeleted(show.id); }
@@ -33,8 +37,29 @@ export function Shows({ shows, busyId, hasTv, onPlay, onAdd, onOpenApp, onDelete
           <button className="primary" onClick={onAdd}><Plus size={18} />Add a show</button>
         </div>
       ) : (
+        <>
+        {shows.length > 1 && (
+          <div className="show-filter">
+            <label className="search">
+              <Search size={18} />
+              <input aria-label="Find a show" placeholder="Find a show" value={query} onChange={(event) => setQuery(event.target.value)} />
+              {query && <button className="icon" aria-label="Clear" onClick={() => setQuery('')}><X size={16} /></button>}
+            </label>
+            {apps.length > 1 && (
+              <div className="app-filter" role="group" aria-label="Filter by app">
+                <button aria-pressed={appFilter === null} onClick={() => setAppFilter(null)}>All</button>
+                {apps.map((app) => (
+                  <button key={app} aria-pressed={appFilter === app} onClick={() => setAppFilter(appFilter === app ? null : app)}>
+                    <span className={`app-dot ${app}`} />{app === 'prime' ? 'Prime' : APP_NAMES[app]}
+                  </button>
+                ))}
+              </div>
+            )}
+            {visible.length === 0 && <p className="hint">No saved shows match.</p>}
+          </div>
+        )}
         <ul className="show-list">
-          {shows.map((show) => (
+          {visible.map((show) => (
             <li key={show.id} className="show">
               <button className="show-main" disabled={busyId !== null || editing} onClick={() => onPlay(show)} aria-label={`Put ${show.title} on the TV`}>
                 <span className={`thumb ${show.app}`}>
@@ -50,6 +75,7 @@ export function Shows({ shows, busyId, hasTv, onPlay, onAdd, onOpenApp, onDelete
             </li>
           ))}
         </ul>
+        </>
       )}
       {shows.length > 0 && <button className="secondary full" onClick={onAdd}><Plus size={18} />Add a show</button>}
 

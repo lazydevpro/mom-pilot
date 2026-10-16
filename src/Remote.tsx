@@ -10,8 +10,26 @@ const KEYBOARD: Record<string, Key> = {
 };
 
 export function Remote({ details, onPress, onGoToTv }: { details: Details | null; onPress: (key: Key | 'wake') => void; onGoToTv: () => void }) {
-  const [snapshot, setSnapshot] = useState<{ url: string; state: 'loading' | 'ready' | 'failed' } | null>(null);
+  const [snapshot, setSnapshot] = useState<{ url?: string; state: 'loading' | 'ready' | 'failed'; message?: string } | null>(null);
   const ready = Boolean(details?.device.adbTarget);
+
+  // Fetched rather than set as an <img> source, so the server's reason can be shown when there's no picture.
+  async function takeSnapshot(deviceId: string) {
+    setSnapshot((current) => ({ url: current?.url, state: 'loading' }));
+    try {
+      const response = await fetch(`/api/devices/${deviceId}/snapshot`, { cache: 'no-store' });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        setSnapshot({ state: 'failed', message: body.message || 'Couldn’t get the screen. Is the TV on and connected?' });
+        return;
+      }
+      const url = URL.createObjectURL(await response.blob());
+      setSnapshot((current) => { if (current?.url) URL.revokeObjectURL(current.url); return { url, state: 'ready' }; });
+    } catch {
+      setSnapshot({ state: 'failed', message: 'Can’t reach the MomPilot server.' });
+    }
+  }
+  useEffect(() => () => { if (snapshot?.url) URL.revokeObjectURL(snapshot.url); }, [snapshot?.url]);
 
   // Arrow keys, Enter and Backspace work as a remote on a laptop.
   useEffect(() => {
@@ -70,19 +88,15 @@ export function Remote({ details, onPress, onGoToTv }: { details: Details | null
         {button('volumeUp', 'Volume up', <Volume2 size={24} />)}
       </div>
 
-      <button className="secondary full" onClick={() => setSnapshot({ url: `/api/devices/${details.device.id}/snapshot?at=${Date.now()}`, state: 'loading' })}>
-        {snapshot?.state === 'loading' ? <LoaderCircle className="spin" size={18} /> : <Image size={18} />}See TV screen
+      <button className="secondary full" disabled={snapshot?.state === 'loading'} onClick={() => takeSnapshot(details.device.id)}>
+        {snapshot?.state === 'loading' ? <LoaderCircle className="spin" size={18} /> : <Image size={18} />}
+        {snapshot?.state === 'loading' ? 'Getting the screen…' : 'See TV screen'}
       </button>
       {snapshot && (
         <figure className="snapshot">
-          <img
-            src={snapshot.url} alt="Mom’s TV screen" hidden={snapshot.state === 'failed'}
-            onLoad={() => setSnapshot((current) => current && { ...current, state: 'ready' })}
-            onError={() => setSnapshot((current) => current && { ...current, state: 'failed' })}
-          />
-          <figcaption>
-            {snapshot.state === 'failed' ? 'Couldn’t get the screen. Is the TV on and connected?'
-              : 'Video inside Netflix and Prime Video shows as black; menus are visible.'}
+          {snapshot.url && snapshot.state !== 'failed' && <img src={snapshot.url} alt="Mom’s TV screen" />}
+          <figcaption className={snapshot.state === 'failed' ? 'bad' : ''}>
+            {snapshot.state === 'failed' ? snapshot.message : 'Playing video shows as black; menus and pages are visible.'}
           </figcaption>
         </figure>
       )}

@@ -46,6 +46,16 @@
                 android:value="Waits for a family member's request to open a show on this TV" />
         </service>
 
+        <!-- Only ADB (which holds WRITE_SECURE_SETTINGS) can hand this TV a server and credential. -->
+        <receiver
+            android:name=".SetupReceiver"
+            android:exported="true"
+            android:permission="android.permission.WRITE_SECURE_SETTINGS">
+            <intent-filter>
+                <action android:name="com.mompilot.tv.CONFIGURE" />
+            </intent-filter>
+        </receiver>
+
         <receiver
             android:name=".BootReceiver"
             android:exported="true">

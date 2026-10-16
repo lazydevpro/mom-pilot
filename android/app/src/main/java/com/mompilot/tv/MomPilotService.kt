@@ -45,6 +45,25 @@ class MomPilotService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 }
 
+/**
+ * Receives this TV's server address and credential when a phone sets it up. The manifest only lets
+ * senders holding WRITE_SECURE_SETTINGS (ADB, not ordinary apps) deliver this.
+ * Result 1 = saved; 2 = rejected.
+ */
+class SetupReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        val server = intent.getStringExtra("server").orEmpty().trim().trimEnd('/')
+        val token = intent.getStringExtra("token").orEmpty()
+        if (!RelayClient.isAllowed(server) || !Regex("[A-Za-z0-9_-]{32,}").matches(token)) {
+            resultCode = 2
+            return
+        }
+        Engine.configure(context, server, token)
+        MomPilotService.start(context)
+        resultCode = 1
+    }
+}
+
 /** Starts listening again after the TV restarts or MomPilot is updated. */
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {

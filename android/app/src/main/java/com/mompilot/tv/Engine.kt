@@ -10,18 +10,17 @@ import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 
-enum class Phase { NEEDS_SERVER, CONNECTING, UNPAIRED, PAIRED, OFFLINE }
+enum class Phase { NEEDS_SETUP, CONNECTING, PAIRED, OFFLINE }
 
 data class TvState(
     val phase: Phase,
     val caregiver: String? = null,
-    val code: String = "",
     val lastAction: String = "",
     val message: String? = null,
 )
 
 /**
- * Keeps this TV registered and paired, polls the server for shows to open, opens them and reports back.
+ * Once the phone has set this TV up, polls the server for shows to open, opens them and reports back.
  * All work runs on one background thread; listeners are called on the main thread.
  * It holds only the application context, which lives as long as the process.
  */
@@ -38,17 +37,20 @@ object Engine {
     private var next: ScheduledFuture<*>? = null
     private var started = false
     private var failures = 0
+    @Volatile private var pollingToken = ""
 
-    /** True while the MomPilot screen is showing; the pairing code is only refreshed then. */
+    /** True while the MomPilot screen is showing. */
     @Volatile var visible = false
 
     @Volatile var state = TvState(Phase.CONNECTING)
         private set
 
     fun start(appContext: Context) {
-        if (!::context.isInitialized) {
-            context = appContext.applicationContext
-            store = Store(context)
+        synchronized(this) {
+            if (!::context.isInitialized) {
+                context = appContext.applicationContext
+                store = Store(context)
+            }
         }
         worker.execute {
             if (!started) { started = true; schedule(0) }
@@ -60,25 +62,19 @@ object Engine {
 
     fun pollNow() = worker.execute { if (started) schedule(0) }
 
-    fun serverAddress(): String = if (::store.isInitialized) store.endpoint else ""
-
-    fun useServer(endpoint: String) = worker.execute {
-        store.useServer(endpoint)
+    /** Called by [SetupReceiver]: written before returning, so the phone's setup only succeeds once it's saved. */
+    fun configure(appContext: Context, endpoint: String, token: String) {
+        start(appContext)
+        store.configure(endpoint, token)
         publish(TvState(Phase.CONNECTING))
-        schedule(0)
-    }
-
-    fun refreshCode() = worker.execute {
-        guarded { store.saveCode(client().request("/api/tv/pairing", JSONObject())) }
-        schedule(0)
+        pollNow()
     }
 
     fun disconnect() = worker.execute {
-        guarded {
-            store.saveCode(client().request("/api/tv/revoke", JSONObject()))
-            store.lastAction = ""
-        }
-        schedule(0)
+        // Tell the server if it's reachable; either way this TV goes back to the setup screen.
+        if (store.isConfigured) runCatching { client().request("/api/tv/revoke", JSONObject()) }
+        store.forget()
+        publish(TvState(Phase.NEEDS_SETUP))
     }
 
     private fun client() = RelayClient(store.endpoint, store.token)
@@ -102,21 +98,20 @@ object Engine {
     }
 
     private fun step() {
-        if (store.endpoint.isBlank()) { publish(TvState(Phase.NEEDS_SERVER)); return }
-        if (store.token.isBlank()) {
-            store.saveRegistration(RelayClient(store.endpoint, "").request("/api/tv/register", JSONObject()))
-        }
+        if (!store.isConfigured) { publish(TvState(Phase.NEEDS_SETUP)); return }
+        pollingToken = store.token
         val api = client()
         report(api)
         val result = api.request("/api/tv/commands")
         val device = result.getJSONObject("device")
-        val paired = device.optBoolean("paired")
-        if (!paired && visible && store.codeExpiresAt <= System.currentTimeMillis() + 5000) {
-            store.saveCode(api.request("/api/tv/pairing", JSONObject()))
+        if (!device.optBoolean("paired")) {
+            // Disconnected on the server: back to the setup screen.
+            store.forget()
+            publish(TvState(Phase.NEEDS_SETUP))
+            return
         }
         val caregiver = device.optJSONObject("caregiver")?.optString("name")
-        publish(TvState(if (paired) Phase.PAIRED else Phase.UNPAIRED, caregiver, store.code, store.lastAction))
-        if (!paired) return
+        publish(TvState(Phase.PAIRED, caregiver, store.lastAction))
         val commands = result.optJSONArray("commands") ?: return
         for (index in 0 until commands.length()) handle(api, commands.getJSONObject(index))
     }
@@ -151,15 +146,14 @@ object Engine {
         }
     }
 
-    private fun guarded(work: () -> Unit) {
-        try { work() } catch (error: Exception) { onError(error) }
-    }
-
     private fun onError(error: Exception) {
         if (error is RelayClient.ApiException && error.status == 401) {
-            // The server no longer knows this TV (for example, its data was reset). Register again.
-            store.forgetDevice()
-            publish(TvState(Phase.CONNECTING, message = "Reconnecting to MomPilot…"))
+            // The server no longer accepts this credential. If the phone has just set the TV up again,
+            // the new credential is already saved and is kept.
+            if (store.token == pollingToken) {
+                store.forget()
+                publish(TvState(Phase.NEEDS_SETUP))
+            }
             return
         }
         val message = when (error) {
@@ -167,7 +161,7 @@ object Engine {
             is IllegalArgumentException -> error.message
             else -> "Can't reach the MomPilot server. Check the TV's internet and Tailscale."
         }
-        publish(state.copy(phase = if (store.endpoint.isBlank()) Phase.NEEDS_SERVER else Phase.OFFLINE, message = message))
+        publish(state.copy(phase = if (store.isConfigured) Phase.OFFLINE else Phase.NEEDS_SETUP, message = message))
     }
 
     private fun publish(next: TvState) {

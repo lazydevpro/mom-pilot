@@ -11,29 +11,19 @@ class Store(context: Context) {
 
     val endpoint: String get() = prefs.getString("endpoint", "")!!
     val token: String get() = prefs.getString("token", "")!!
-    val code: String get() = prefs.getString("code", "")!!
-    val codeExpiresAt: Long get() = prefs.getLong("codeExpiresAt", 0)
+    val isConfigured: Boolean get() = endpoint.isNotBlank() && token.isNotBlank()
     var lastAction: String
         get() = prefs.getString("lastAction", "")!!
         set(value) { prefs.edit().putString("lastAction", value).apply() }
 
-    /** Switching servers starts over: new credential, new pairing, empty journal. */
-    fun useServer(endpoint: String) {
-        prefs.edit().clear().putString("endpoint", endpoint).commit()
+    /** Set up from the phone (through ADB): a new server or credential starts with an empty journal. */
+    fun configure(endpoint: String, token: String) {
+        prefs.edit().clear().putString("endpoint", endpoint).putString("token", token).commit()
     }
 
-    fun forgetDevice() {
-        prefs.edit().remove("token").remove("code").remove("codeExpiresAt").remove("journal").commit()
-    }
-
-    fun saveRegistration(result: JSONObject) {
-        prefs.edit().putString("token", result.getString("token")).commit()
-        saveCode(result)
-    }
-
-    fun saveCode(result: JSONObject) {
-        prefs.edit().putString("code", result.optString("code"))
-            .putLong("codeExpiresAt", Iso.parse(result.optString("expiresAt"))).apply()
+    /** Back to the setup screen. */
+    fun forget() {
+        prefs.edit().clear().commit()
     }
 
     // Journal entries: id → "" while opening, then "LAUNCHED" or "FAILED:<reason>", and "+" once the server has the result.
@@ -43,7 +33,6 @@ class Store(context: Context) {
         // Keep the newest 100 entries; JSONObject keeps insertion order on Android.
         val keys = entries.keys().asSequence().toList()
         keys.take((keys.size - 100).coerceAtLeast(0)).forEach { entries.remove(it) }
-        // commit(), not apply(): a command must be recorded before the TV acts on it.
         prefs.edit().putString("journal", entries.toString()).commit()
     }
 
@@ -67,12 +56,4 @@ class Store(context: Context) {
             .filter { (_, result) -> result.isNotEmpty() && !result.endsWith("+") }
             .toMap()
     }
-}
-
-object Iso {
-    private val format = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US).apply {
-        timeZone = java.util.TimeZone.getTimeZone("UTC")
-    }
-
-    fun parse(value: String): Long = try { synchronized(format) { format.parse(value)?.time ?: 0 } } catch (_: Exception) { 0 }
 }

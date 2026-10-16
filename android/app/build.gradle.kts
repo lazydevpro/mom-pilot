@@ -1,4 +1,4 @@
-import java.util.Properties
+﻿import java.util.Properties
 
 plugins {
     id("com.android.application")
@@ -18,8 +18,8 @@ android {
         applicationId = "com.mompilot.tv"
         minSdk = 22
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 4
+        versionName = "0.3.1"
     }
     signingConfigs {
         if (keystore.isNotEmpty()) {
@@ -46,4 +46,9 @@ android {
 
 kotlin {
     compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) }
+}
+
+dependencies {
+    // Draws the setup QR code; no Google services needed on the TV.
+    implementation("com.google.zxing:core:3.5.3")
 }

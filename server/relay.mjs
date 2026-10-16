@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { extname, resolve, sep } from 'node:path';
 import { AdbError, KEYS, createAdb } from './adb.mjs';
 import { APPS, LinkError, launchFor, resolveLink, showImage } from './shows.mjs';
+import { createTailnet } from './tailnet.mjs';
 
 const PENDING = new Set(['QUEUED', 'RECEIVED']);
 const COOKIE = 'mompilot_session';
@@ -118,6 +119,10 @@ export function createRelay({
   adb = createAdb(),
   resolve: resolveShowLink = resolveLink,
   staticDir = null,
+  tailnet = createTailnet(),
+  tvApk = null,
+  phoneApk = null,
+  publicUrl = null,
 } = {}) {
   const webRoot = staticDir && resolve(staticDir);
   mkdirSync(dataDir, { recursive: true });
@@ -268,6 +273,21 @@ export function createRelay({
     return { code, expiresAt: iso(expiresAt) };
   }
 
+  /** The address the TV app should use: PUBLIC_URL, else the phone's own address, else this machine's Tailscale HTTPS name. */
+  async function serverAddress(candidate) {
+    const usable = (value) => {
+      try {
+        const url = new URL(value);
+        if (['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) || url.pathname !== '/' || url.search || url.username) return false;
+        return url.protocol === 'https:' || (url.protocol === 'http:' && (/^100\./.test(url.hostname) || url.hostname.endsWith('.ts.net')));
+      } catch { return false; }
+    };
+    for (const option of [publicUrl, typeof candidate === 'string' ? candidate : null, await tailnet.publicUrl()]) {
+      if (option && usable(option)) return new URL(option).origin;
+    }
+    return fail(409, 'NO_SERVER_ADDRESS', 'The TV needs this server’s Tailscale address. Run `tailscale serve --bg 8787` on the server, or set PUBLIC_URL.');
+  }
+
   function adbFailure(error) {
     if (!(error instanceof AdbError)) throw error;
     const status = error.code === 'ADB_INVALID' ? 400 : error.code === 'ADB_MISSING' ? 500 : 502;
@@ -276,7 +296,9 @@ export function createRelay({
 
   /** Opens a show or app: ADB first, then the TV app's queue. Returns the stored command. */
   async function open(device, { type, app, show, idempotencyKey }) {
-    const launch = show ? launchFor(show) : null;
+    let launch = null;
+    try { launch = show ? launchFor(show) : null; }
+    catch (error) { if (error instanceof LinkError) fail(400, 'INVALID_SHOW', error.message); throw error; }
     const command = {
       id: randomUUID(), deviceId: device.id, type, app, ...(show ? { showId: show.id, title: show.title } : {}),
       idempotencyKey, via: null, state: 'QUEUED', reason: null,
@@ -317,6 +339,15 @@ export function createRelay({
       const path = url.pathname.replace(/\/$/, '');
       const method = req.method;
       const ip = req.socket.remoteAddress || 'unknown';
+      if (method === 'GET' && path === '/download/mompilot.apk') {
+        if (!phoneApk) fail(404, 'NOT_BUILT', 'The Android app hasn’t been built on this server.');
+        const apk = await readFile(phoneApk);
+        res.writeHead(200, {
+          'Content-Type': 'application/vnd.android.package-archive', 'Content-Length': apk.length,
+          'Content-Disposition': 'attachment; filename="MomPilot.apk"', 'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff',
+        });
+        return res.end(apk);
+      }
       if (!path.startsWith('/api/')) {
         if (!webRoot || !['GET', 'HEAD'].includes(method)) fail(404, 'NOT_FOUND', 'This server serves /api routes only.');
         return await serveStatic(res, webRoot, url.pathname);
@@ -325,6 +356,8 @@ export function createRelay({
         fail(403, 'CROSS_SITE_REQUEST', 'Open the MomPilot app to make this request.');
       }
       if (method === 'GET' && path === '/api/health') return respond(200, { ok: true });
+      // The address other devices should use, for QR codes made on a page opened through localhost.
+      if (method === 'GET' && path === '/api/server') return respond(200, { publicUrl: publicUrl || await tailnet.publicUrl() });
       if (method === 'GET' && path === '/api/apps') {
         return respond(200, { apps: Object.entries(APPS).map(([id, app]) => ({ id, name: app.name })), keys: Object.keys(KEYS) });
       }
@@ -465,6 +498,67 @@ export function createRelay({
         return respond(200, { device: deviceView(device) });
       }
 
+      // Fire TVs on the Tailscale network, so a phone can add one with a tap.
+      if (method === 'GET' && path === '/api/tvs/nearby') {
+        const session = sessionFor(req);
+        const mine = new Set(state.devices.filter((device) => device.caregiver?.id === session.caregiver.id).map((device) => device.adbTarget));
+        const tvs = (await tailnet.androidDevices())
+          .map((device) => ({ name: device.name, address: `${device.address}:5555`, adb: device.adb, added: mine.has(`${device.address}:5555`) }))
+          .sort((a, b) => Number(b.adb) - Number(a.adb) || a.name.localeCompare(b.name));
+        return respond(200, { tvs });
+      }
+
+      // Sets up a TV with no typing on it: connect over ADB (the TV asks to Allow once), install the
+      // MomPilot TV app if needed, then hand it this server's address and its own credential.
+      if (method === 'POST' && path === '/api/tvs/setup') {
+        sessionFor(req);
+        limit(`setup:${ip}`, 30);
+        const body = await readBody(req);
+        exactKeys(body, ['address', 'name', 'serverUrl']);
+        let target = typeof body.address === 'string' ? body.address.trim() : '';
+        if (/^[A-Za-z0-9.-]+$/.test(target)) target += ':5555';
+        if (!ADB_TARGET.test(target)) fail(400, 'INVALID_ADB_TARGET', 'Enter the TV’s Tailscale address, for example 100.101.102.103.');
+        const name = body.name === undefined ? null : cleanText(body.name, 'TV name');
+        const server = await serverAddress(body.serverUrl);
+        let info;
+        try { info = await adb.describe(target); } catch (error) { adbFailure(error); }
+        if (!/amazon/i.test(info.manufacturer)) fail(400, 'NOT_FIRE_TV', `That’s a ${info.manufacturer} ${info.model}, not a Fire TV.`.trim());
+        // Install, or update, the TV app from this server's build so it understands this setup.
+        if (tvApk) {
+          try { await adb.install(target, tvApk); } catch (error) { adbFailure(error); }
+        } else if (!info.hasApp) {
+          fail(409, 'TV_APP_MISSING', 'Install the MomPilot TV app on the TV first.');
+        }
+        // Checked again after the slow steps above.
+        const session = sessionFor(req);
+        const taken = state.devices.find((device) => device.adbTarget === target && device.caregiver && device.caregiver.id !== session.caregiver.id);
+        if (taken) fail(409, 'TV_ALREADY_CONNECTED', 'This TV is connected to someone else. Disconnect it in the MomPilot app on the TV first.');
+        const token = randomBytes(32).toString('base64url');
+        let device = state.devices.find((entry) => entry.adbTarget === target && entry.caregiver?.id === session.caregiver.id);
+        const created = !device;
+        const previousHash = device?.tokenHash;
+        if (created) {
+          device = {
+            id: randomUUID(), tokenHash: hash(token), name: name || 'Mom’s TV', caregiver: { ...session.caregiver },
+            pairing: null, pairedAt: iso(now()), lastSeenAt: null, adbTarget: target,
+          };
+          state.devices.push(device);
+        } else {
+          device.tokenHash = hash(token);
+          if (name) device.name = name;
+        }
+        // The TV starts polling as soon as it has its credential, so the device must already exist.
+        try { await adb.configure(target, { server, token }); }
+        catch (error) {
+          if (created) state.devices = state.devices.filter((entry) => entry !== device);
+          else device.tokenHash = previousHash;
+          adbFailure(error);
+        }
+        statusCache.delete(device.id);
+        persist();
+        return respond(created ? 201 : 200, { device: deviceView(device) });
+      }
+
       if (method === 'GET' && path === '/api/devices') {
         const session = sessionFor(req);
         return respond(200, { devices: state.devices.filter((device) => device.caregiver?.id === session.caregiver.id).map(deviceView) });
@@ -486,6 +580,8 @@ export function createRelay({
           if (!device.adbTarget) fail(409, 'ADB_NOT_SET', 'Set the TV’s ADB address first.');
           let image;
           try { image = await adb.snapshot(device.adbTarget); } catch (error) { adbFailure(error); }
+          // Apps that protect their screens (Netflix) give an empty picture.
+          if (!image || image.length < 100) fail(409, 'SNAPSHOT_BLOCKED', 'The app on screen doesn’t allow screen pictures (Netflix blocks them). Press Home to see the menu.');
           res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': image.length, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
           return res.end(image);
         }
