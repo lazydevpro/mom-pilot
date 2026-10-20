@@ -84,34 +84,23 @@ The server needs to be on whenever Mom might call. Pick one:
 - `.local/relay.json` holds your account, shows and pairing. Back it up now and then.
 - The ADB key in the server user's home folder (`~/.android/adbkey`, on Windows `%USERPROFILE%\.android\adbkey`). Mom's TV trusts this key. If you move the server to another machine without it, Mom has to press **Allow** on the TV again.
 
-## 3. Mom's Fire TV Stick
+## 3. Mom's Fire TV Stick (no typing on the TV)
 
 Needs a **Fire OS** stick (Settings → My Fire TV → About shows Fire OS 7 or 8). Vega OS sticks don't allow this.
 
 1. **ADB debugging:** Settings → My Fire TV → About → select the device name 7 times. Back → **Developer Options** → **ADB debugging** on.
-2. **Tailscale:** install it from the Amazon Appstore if it's listed; otherwise follow https://tailscale.com/kb/1394/install-amazon-fire. Sign in by scanning the QR code with your phone. Note the stick's address (`100.x.y.z`).
-3. **Keep Tailscale on after a restart:** from the server:
-   ```bash
-   adb connect 100.x.y.z:5555
-   adb -s 100.x.y.z:5555 shell settings put secure always_on_vpn_app com.tailscale.ipn
-   ```
-   The first `adb connect` shows **"Allow USB debugging?"** on the TV: tick **Always allow from this computer** and press **Allow**.
-4. **MomPilot TV app:** install the APK and open it once:
-   ```bash
-   adb -s 100.x.y.z:5555 install -r android/app/build/outputs/apk/release/app-release.apk
-   adb -s 100.x.y.z:5555 shell am start -n com.mompilot.tv/.MainActivity
-   ```
-   On the TV, enter the **server address** from step 2 (for example `https://my-pc.tail1234.ts.net`). A six-digit code appears.
-   - On **Fire OS 8** only, also run `adb -s 100.x.y.z:5555 shell appops set com.mompilot.tv SYSTEM_ALERT_WINDOW allow` so the app can open shows from the background.
+2. **Tailscale:** install it from the Amazon Appstore if it's listed; otherwise follow https://tailscale.com/kb/1394/install-amazon-fire. Sign in by scanning the QR code with your phone.
+3. **Sign in to YouTube, Netflix and Prime Video** on the stick, so shows start without prompts.
+
+The MomPilot TV app is installed and configured by the server in step 4; nothing is typed on the TV. To keep Tailscale on after a restart, run once from the server: `adb -s 100.x.y.z:5555 shell settings put secure always_on_vpn_app com.tailscale.ipn`. On **Fire OS 8** only, also run `adb -s 100.x.y.z:5555 shell appops set com.mompilot.tv SYSTEM_ALERT_WINDOW allow`.
 
 ## 4. Your phones
 
-1. Install Tailscale and sign in to the same account. Leave it on.
-2. Open the **server address** in Chrome (Android) or Safari (iPhone). Enter your name.
-3. **TV** tab → enter the code shown on the TV. Then enter the stick's address as `100.x.y.z:5555` under **Address for the remote** and save. The status at the top turns green.
-4. Add it to the home screen: Safari → Share → **Add to Home Screen**; Chrome → menu → **Add to Home screen / Install app**. On iPhone, the home-screen app has its own storage: open it, choose **Already use MomPilot on another phone?**, and enter a code from **TV → Your phones → Add another phone** in Safari.
-5. Your second phone: same steps 1–2, then use **Already use MomPilot on another phone?** with a code from the first.
+1. Install Tailscale on the phone and sign in to the same account. Leave it on.
+2. **Android:** install the MomPilot app from `https://<server address>/download/mompilot.apk`. **iPhone:** open the server address in Safari and add it to the home screen.
+3. First phone: enter the server address and your name. Other phones: on a phone already signed in, open **TV → Add another phone** and scan its QR code (iPhone: choose **Already use MomPilot on another phone?** and type the code).
+4. **TV → Add Mom's TV**, then tap the stick in the list (or scan the QR code on the MomPilot TV screen). When the TV asks **"Allow USB debugging?"**, tick **Always allow** and press **Allow**. The server installs the MomPilot TV app, connects it, and the TV shows **"You're all set"**.
 
-On Android, once installed, you can share a link from the YouTube, Netflix or Prime Video app straight to **MomPilot**.
+On Android you can share a link from the YouTube, Netflix or Prime Video app straight to **MomPilot**.
 
 Then go through [CHECKLIST.md](CHECKLIST.md).

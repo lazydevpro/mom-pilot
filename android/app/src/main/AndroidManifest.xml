@@ -21,7 +21,7 @@
         android:allowBackup="false"
         android:usesCleartextTraffic="true"
         tools:targetApi="23"
-        android:icon="@drawable/ic_mompilot"
+        android:icon="@mipmap/ic_launcher"
         android:banner="@drawable/tv_banner"
         android:label="MomPilot"
         android:supportsRtl="true"

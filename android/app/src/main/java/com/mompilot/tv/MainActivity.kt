@@ -87,7 +87,18 @@ class MainActivity : Activity() {
         }
         shownKey = key
         root.removeAllViews()
-        root.addView(text("♥  MomPilot", 30f, coral, bold = true))
+        root.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(ImageView(this@MainActivity).apply {
+                setImageResource(R.drawable.logo)
+                clipToOutline = true
+                outlineProvider = object : android.view.ViewOutlineProvider() {
+                    override fun getOutline(view: View, outline: android.graphics.Outline) = outline.setRoundRect(0, 0, view.width, view.height, dp(14).toFloat())
+                }
+            }, LinearLayout.LayoutParams(dp(64), dp(64)).apply { setMargins(0, 0, dp(16), 0) })
+            addView(text("MomPilot", 32f, ink, bold = true))
+        })
         when (state.phase) {
             Phase.NEEDS_SETUP -> showSetup(address, adbOn)
             Phase.CONNECTING -> root.addView(text(state.message ?: "Connecting…", 30f))

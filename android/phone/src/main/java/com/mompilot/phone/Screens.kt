@@ -1,6 +1,7 @@
 package com.mompilot.phone
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
@@ -28,7 +29,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.outlined.Gamepad
@@ -75,6 +75,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -122,9 +123,7 @@ private fun MainScreen(model: AppModel) {
             TopAppBar(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(30.dp).clip(RoundedCornerShape(9.dp)).background(Coral), Alignment.Center) {
-                            Icon(Icons.Filled.Favorite, null, tint = Color.White, modifier = Modifier.size(18.dp))
-                        }
+                        Image(painterResource(R.drawable.logo), null, Modifier.size(34.dp).clip(RoundedCornerShape(9.dp)))
                         Spacer(Modifier.width(10.dp))
                         Text("MomPilot", fontWeight = FontWeight.Bold)
                     }
@@ -188,9 +187,7 @@ private fun WelcomeScreen(model: AppModel) {
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
     ) {
         Spacer(Modifier.height(40.dp))
-        Box(Modifier.size(76.dp).clip(RoundedCornerShape(22.dp)).background(Coral), Alignment.Center) {
-            Icon(Icons.Filled.Favorite, null, tint = Color.White, modifier = Modifier.size(40.dp))
-        }
+        Image(painterResource(R.drawable.logo), "MomPilot", Modifier.size(96.dp).clip(RoundedCornerShape(26.dp)))
         Spacer(Modifier.height(14.dp))
         Text("MomPilot", fontSize = 30.sp, fontWeight = FontWeight.Bold)
         Text("Put Mom’s shows on her TV from wherever you are.", color = MaterialTheme.colorScheme.onSurfaceVariant)

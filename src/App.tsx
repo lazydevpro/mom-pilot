@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Gamepad2, Heart, ListVideo, LoaderCircle, Play, Tv, X } from 'lucide-react';
+import { Gamepad2, ListVideo, LoaderCircle, Tv, X } from 'lucide-react';
 import {
   APP_NAMES, ApiError, api, post, requestKey, tvStatus,
   type AppId, type Command, type Details, type Device, type Key, type Show,
@@ -158,7 +158,7 @@ export default function App() {
   return (
     <div className="app">
       <header className="top">
-        <div className="brand"><span className="brand-mark"><Heart size={16} fill="currentColor" /><Play size={8} fill="currentColor" /></span>MomPilot</div>
+        <div className="brand"><img className="brand-mark" src="/logo.png" alt="" />MomPilot</div>
         <button className={`status-pill ${status.tone}`} onClick={() => setTab('tv')}>
           <span className="dot" />{status.text}
         </button>
@@ -221,7 +221,7 @@ function Welcome({ onStart, onJoin }: { onStart: (name: string) => Promise<void>
   const valid = joining ? /^\d{6}$/.test(value) : Boolean(value.trim());
   return (
     <main className="center-screen welcome">
-      <span className="brand-mark large"><Heart size={34} fill="currentColor" /><Play size={14} fill="currentColor" /></span>
+      <img className="brand-mark large" src="/logo.png" alt="MomPilot" />
       <h1>MomPilot</h1>
       <p>Put Mom’s shows on her TV from wherever you are.</p>
       <form onSubmit={async (event) => {
