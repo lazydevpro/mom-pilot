@@ -18,8 +18,8 @@ android {
         applicationId = "com.mompilot.tv"
         minSdk = 22
         targetSdk = 35
-        versionCode = 5
-        versionName = "0.4.0"
+        versionCode = 6
+        versionName = "0.4.1"
     }
     signingConfigs {
         if (keystore.isNotEmpty()) {

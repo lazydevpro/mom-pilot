@@ -224,11 +224,11 @@ private fun Activity(details: Details) {
 @Composable
 private fun Phones(model: AppModel) {
     Section {
-        Text("Your phones", fontWeight = FontWeight.Bold)
-        Hint("To use MomPilot on another phone, open the MomPilot app there and scan this code. iPhone: open the server address in Safari instead.")
+        Text("Use MomPilot on another phone", fontWeight = FontWeight.Bold)
+        Hint("Only for signing in a second phone. Not needed for the TV.")
         val link = model.linkCode
         if (link == null) {
-            OutlinedButton(onClick = model::makeLinkCode, modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) { Text("Add another phone") }
+            OutlinedButton(onClick = model::makeLinkCode, modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) { Text("Show a code for another phone") }
         } else {
             val image = remember(link.qr) { qrImage(link.qr) }
             Image(image, "Code for your other phone", Modifier.padding(top = 12.dp).size(220.dp).align(Alignment.CenterHorizontally))

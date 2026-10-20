@@ -78,6 +78,12 @@ class AppModel(application: Application) : AndroidViewModel(application) {
         catch (error: ApiException) { done(error.message) }
     }
 
+    /** First run: create the account, then (if a TV code was scanned) set that TV up straight away. */
+    fun startWithTv(server: String, yourName: String, tv: Uri?, done: (String?) -> Unit) {
+        if (tv != null) pendingTvLink = tv
+        start(server, yourName) { problem -> if (problem != null) pendingTvLink = null; done(problem) }
+    }
+
     fun join(server: String, code: String, done: (String?) -> Unit) = viewModelScope.launch {
         val origin = Api.normalizeServer(server) ?: return@launch done("That code isn’t from MomPilot.")
         api.server = origin

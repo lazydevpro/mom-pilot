@@ -177,54 +177,89 @@ fun Banner(text: String, color: Color) {
 @Composable
 private fun WelcomeScreen(model: AppModel) {
     val context = LocalContext.current
-    var server by remember { mutableStateOf(model.api.server) }
     var name by remember { mutableStateOf("") }
+    var server by remember { mutableStateOf(model.api.server.ifBlank { BuildConfig.DEFAULT_SERVER }) }
+    var editingServer by remember { mutableStateOf(server.isBlank()) }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
+    // Opened by scanning the TV's code with the camera app: the TV is already known.
+    val tvLink = model.pendingTvLink
+    val tvName = tvLink?.getQueryParameter("name")
+
+    fun connect(link: android.net.Uri?) {
+        busy = true; error = null
+        model.startWithTv(server, name, link) { problem -> busy = false; error = problem }
+    }
+
     Column(
         Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).verticalScroll(rememberScrollState())
             .imePadding().padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
     ) {
-        Spacer(Modifier.height(40.dp))
+        Spacer(Modifier.height(32.dp))
         Image(painterResource(R.drawable.logo), "MomPilot", Modifier.size(96.dp).clip(RoundedCornerShape(26.dp)))
         Spacer(Modifier.height(14.dp))
         Text("MomPilot", fontSize = 30.sp, fontWeight = FontWeight.Bold)
         Text("Put Mom’s shows on her TV from wherever you are.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(28.dp))
 
+        OutlinedTextField(
+            name, { name = it.take(60) }, label = { Text("Your name, as Mom will see it") }, singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        if (editingServer) {
+            OutlinedTextField(
+                server, { server = it }, label = { Text("MomPilot server address") }, placeholder = { Text("my-pc.tail1234.ts.net") },
+                singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            )
+        } else {
+            Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Server: " + server.substringAfter("://"), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                TextButton({ editingServer = true }) { Text("Change") }
+            }
+        }
+
+        val ready = !busy && name.isNotBlank() && server.isNotBlank()
         Button(
             onClick = {
+                if (tvLink != null) { connect(tvLink); return@Button }
                 error = null
                 scanQr(context, { text ->
                     val link = mompilotLink(text)
-                    if (link?.host == "join") { busy = true; model.handleLink(link) } else error = "That isn’t a MomPilot code."
+                    when (link?.host) {
+                        "tv" -> connect(link)
+                        // A code from another phone signs in to that account instead.
+                        "join" -> { busy = true; model.handleLink(link) }
+                        else -> error = "That’s not a MomPilot code. Scan the code on the MomPilot TV screen."
+                    }
                 }, { error = it })
             },
-            modifier = Modifier.fillMaxWidth().height(56.dp),
-        ) { Icon(Icons.Filled.QrCodeScanner, null); Spacer(Modifier.width(8.dp)); Text("Scan the code from your other phone or computer") }
+            enabled = ready,
+            modifier = Modifier.fillMaxWidth().padding(top = 16.dp).height(56.dp),
+        ) {
+            if (busy) CircularProgressIndicator(Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
+            else {
+                Icon(Icons.Filled.QrCodeScanner, null); Spacer(Modifier.width(8.dp))
+                Text(if (tvLink != null) "Connect to ${tvName ?: "Mom’s TV"}" else "Scan the code on Mom’s TV")
+            }
+        }
         Text(
-            "On a phone or computer already using MomPilot: TV → Add another phone.",
+            if (tvLink != null) "Enter your name, then connect." else "Open MomPilot on the TV. It shows the code to scan.",
             color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp),
         )
+        error?.let { Text(it, color = Bad, modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) }
 
-        Spacer(Modifier.height(28.dp))
-        Text("New to MomPilot?", fontWeight = FontWeight.SemiBold, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(
-            server, { server = it }, label = { Text("Server address") }, placeholder = { Text("my-pc.tail1234.ts.net") },
-            singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next),
-            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-        )
-        OutlinedTextField(
-            name, { name = it.take(60) }, label = { Text("Your name, as Mom will see it") }, singleLine = true,
-            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-        )
-        error?.let { Text(it, color = Bad, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) }
-        OutlinedButton(
-            onClick = { busy = true; error = null; model.start(server, name) { busy = false; error = it } },
-            enabled = !busy && server.isNotBlank() && name.isNotBlank(),
-            modifier = Modifier.fillMaxWidth().padding(top = 12.dp).height(52.dp),
-        ) { if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Text("Get started") }
+        Spacer(Modifier.height(24.dp))
+        TextButton(onClick = {
+            error = null
+            scanQr(context, { text ->
+                val link = mompilotLink(text)
+                if (link?.host == "join") { busy = true; model.handleLink(link) }
+                else error = "That’s not a code from another phone. On a phone already using MomPilot: TV → Use MomPilot on another phone."
+            }, { error = it })
+        }) { Text("Already use MomPilot on another phone?") }
+        TextButton(onClick = { connect(null) }, enabled = ready) { Text("Set up without a TV for now") }
     }
 }
 

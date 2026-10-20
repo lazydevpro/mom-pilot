@@ -6,11 +6,11 @@ Rules: https://amazonappdev2026.devpost.com/rules · Track: **Fire TV** ("a demo
 
 ## 1. Before recording (today)
 
-- [ ] Commit and push the new logo (Claude).
-- [ ] Update `docs/DEPLOY.md`, `docs/CHECKLIST.md` and `android/README.md` for the no-typing setup (the repo must have clear setup and run instructions) (Claude).
-- [ ] Install phone app 0.4.0 on your phone (the APK in chat, or `https://my-win.tail4d01fc.ts.net/download/mompilot.apk`).
+- [x] Commit and push the new logo (Claude).
+- [x] Update `docs/DEPLOY.md`, `docs/CHECKLIST.md`, `android/README.md` and `README.md` for the no-typing setup (Claude).
+- [ ] Install phone app 0.4.1 on your phone (OneDrive → MomPilot, the GitHub release, or `https://my-win.tail4d01fc.ts.net/download/mompilot.apk`) and try **name → Scan the code on Mom's TV**.
 - [ ] On the Fire TV, sign in to **YouTube** (it asked "Welcome back" last time), **Netflix** and **Prime Video**, so shows start without prompts.
-- [ ] Keep the server running while you record: start it with `npm start` and leave the window open, or set up auto-start (Claude can do this).
+- [x] Server auto-start: the Windows scheduled task **MomPilot** starts it at sign-in and restarts it if it stops (Claude).
 - [ ] Check the stick and the phone are both online in Tailscale.
 - [ ] Do a full dry run of the shot list below once.
 - [ ] Pick demo content you're allowed to show (see §3).
@@ -31,7 +31,7 @@ Rules: **under 3 minutes**, **in English**, uploaded **public on YouTube or Vime
 |---|---|---|
 | 0:00–0:20 | Mom on the phone; the Fire TV menus | "My mom can turn on her TV but can't find her way around the menus. She calls me, and I talk her through it, button by button." |
 | 0:20–0:35 | MomPilot logo; phone and TV side by side | "MomPilot lets me put her show on, from anywhere." |
-| 0:35–1:05 | TV app's QR screen → phone **TV → Add Mom's TV** → tap the TV → "Allow" on the TV → "You're all set" | "Setup is one tap. No codes, no typing on the TV." |
+| 0:35–1:05 | TV app's QR screen → phone: name → **Scan the code on Mom's TV** → "Allow" on the TV → "You're all set" | "Setup is one scan. No typing on the TV." |
 | 1:05–1:30 | YouTube/Netflix → **Share → MomPilot** → saved in the list; search and filter | "When she likes something, I save it." |
 | 1:30–2:05 | Phone on **mobile data** (show Wi-Fi off) → tap a show → it starts on the TV | "From the office, one tap and it's playing. No buttons for her." |
 | 2:05–2:25 | Remote tab: arrows, OK, volume; "See TV screen" | "If something needs a press, I have her remote in my pocket." |
@@ -43,24 +43,26 @@ The repo must contain all source, assets and setup instructions. It must be eith
 
 - [ ] Decide: public (simplest) or private.
 - [ ] If private: GitHub → Settings → Collaborators → add **chris-trag, knmeiss, giolaq, anishamalde, mosesroth, emersonsklar**, and share with **testing@devpost.com** as the rules describe.
-- [ ] Optional: create a GitHub release with `MomPilot-phone.apk` and `MomPilot-TV.apk` attached, so judges can install them without building (Claude can prepare this).
+- [x] GitHub release `v0.4.1` with `MomPilot-phone-0.4.1.apk` and `MomPilot-TV-0.4.1.apk`, so judges can install them without building (Claude).
 - [ ] Check the README's setup steps on a fresh clone (Claude).
 
 ## 4. Devpost form (required)
 
 - [ ] **Project name and tagline**: "MomPilot: I'll put it on for you."
-- [ ] **Text description**: problem, what it does, how it works, what was hard, what's next (Claude can draft).
+- [ ] **Text description**: drafted in [DEVPOST.md](DEVPOST.md); check it reads true and paste it in.
 - [ ] **Track**: Fire TV.
 - [ ] **Mini challenges**:
   - **AWS Builder** needs AWS services or Kiro Crew, which MomPilot doesn't use, so skip unless that changes.
   - **Open Source** is optional (a separate public repo or contribution).
 - [ ] **"Significantly updated during the submission period"**: the project was started on 29 September, inside the submission period.
-- [ ] **Product feedback for each tool/SDK used**: Fire OS / Fire TV, ADB, Amazon Appstore (sideloading), Tailscale, Android SDK / Jetpack Compose, Google code scanner (ML Kit), Node.js. For each, answer the five questions: what it was used for, what worked, what needs work, onboarding, and whether you'd use it again (Claude can draft).
+- [ ] **Product feedback for each tool/SDK used**: Fire OS / Fire TV, ADB, Amazon Appstore (sideloading), Tailscale, Android SDK / Jetpack Compose, Google code scanner (ML Kit), Node.js. For each, answer the five questions: what it was used for, what worked, what needs work, onboarding, and whether you'd use it again. Drafted in [DEVPOST.md](DEVPOST.md).
 - [ ] **Testing instructions**: link to `docs/DEPLOY.md` and the APKs. Note that judges need a Fire OS stick and Tailscale. Amazon may ask for hardware access.
 - [ ] **Images**: logo, phone screenshots, TV screenshots.
 - [ ] **Built with**: Kotlin, Jetpack Compose, Fire OS, ADB, Tailscale, Node.js, React, TypeScript.
 
 ## 5. Friction log (optional, up to 10% bonus)
+
+Written up in [DEVPOST.md](DEVPOST.md#friction-log).
 
 For each entry: task, steps, expected vs actual, severity, workaround, suggestion. Problems found while building:
 

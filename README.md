@@ -2,9 +2,9 @@
 
 **"I'll put it on for you."** Mom can turn on her TV but can't find her way around the Fire TV menus. When she calls, her son taps a saved show on his phone and it starts on her TV. If something needs a button press, such as Netflix's "Who's watching?", he presses it from a remote on his phone.
 
-- **Phone app** (web app, add to the home screen on Android or iPhone): saved shows, a remote, a snapshot of the TV screen, and TV status. Your other phones join the same account with a six-digit code.
-- **MomPilot server** (Node, no dependencies at runtime): keeps the saved shows and pairing, and drives Mom's Fire TV Stick over ADB: opening a show in YouTube, Netflix or Prime Video, and pressing remote keys.
-- **MomPilot TV app** (Android, on the stick): shows the pairing code, and opens shows itself if ADB is unavailable. Runs in the background and after reboots.
+- **Phone app**: a native Android app (Kotlin, Jetpack Compose), plus a web app for iPhone. Saved shows with search and filters, Share → MomPilot from YouTube, Netflix and Prime Video, a remote, a snapshot of the TV screen, and TV status. A second phone joins the same account by scanning a code.
+- **MomPilot server** (Node, no runtime dependencies): keeps the saved shows, finds the TV on your Tailscale network and sets it up over ADB (no typing on the TV), then opens shows in YouTube, Netflix or Prime Video and presses remote keys.
+- **MomPilot TV app** (Android, on the stick): shows a QR code until it's set up, then who is connected. Opens shows itself if ADB is unavailable, and runs in the background and after reboots.
 - **Tailscale** connects the three privately, with HTTPS from `tailscale serve`. Nothing is exposed to the public internet.
 
 Works with Fire OS sticks (Fire OS 7 and 8). Vega OS sticks (Fire TV Stick 4K Select, Fire TV Stick HD 2nd Gen) block sideloading and ADB, so they can't be used.
@@ -12,7 +12,7 @@ Works with Fire OS sticks (Fire OS 7 and 8). Vega OS sticks (Fire TV Stick 4K Se
 - **Set it up:** [docs/DEPLOY.md](docs/DEPLOY.md)
 - **Check it works:** [docs/CHECKLIST.md](docs/CHECKLIST.md)
 - **Why it's built this way:** [docs/PRD.md](docs/PRD.md) and [docs/PLAN.md](docs/PLAN.md)
-- **API:** [server/API.md](server/API.md) · **TV app:** [android/README.md](android/README.md)
+- **API:** [server/API.md](server/API.md) · **Android apps:** [android/README.md](android/README.md)
 
 ## Develop
 

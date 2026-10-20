@@ -34,7 +34,7 @@ The server needs to be on whenever Mom might call. Pick one:
    tailscale serve --bg 8787
    ```
    It prints your address, for example `https://my-pc.tail1234.ts.net`. That's the **server address** used below.
-5. Start MomPilot automatically when you sign in to Windows (PowerShell, from the `mom-pilot` folder):
+5. Start MomPilot automatically when you sign in to Windows, restarting it if it stops (PowerShell, from the `mom-pilot` folder):
    ```powershell
    $action = New-ScheduledTaskAction -Execute (Get-Command node).Source -Argument 'server\index.mjs' -WorkingDirectory (Get-Location).Path
    $settings = New-ScheduledTaskSettingsSet -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit 0 -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
@@ -98,8 +98,10 @@ The MomPilot TV app is installed and configured by the server in step 4; nothing
 
 1. Install Tailscale on the phone and sign in to the same account. Leave it on.
 2. **Android:** install the MomPilot app from `https://<server address>/download/mompilot.apk`. **iPhone:** open the server address in Safari and add it to the home screen.
-3. First phone: enter the server address and your name. Other phones: on a phone already signed in, open **TV → Add another phone** and scan its QR code (iPhone: choose **Already use MomPilot on another phone?** and type the code).
-4. **TV → Add Mom's TV**, then tap the stick in the list (or scan the QR code on the MomPilot TV screen). When the TV asks **"Allow USB debugging?"**, tick **Always allow** and press **Allow**. The server installs the MomPilot TV app, connects it, and the TV shows **"You're all set"**.
+3. **First phone:** open MomPilot, type your name and tap **Scan the code on Mom's TV**. Point the camera at the QR code on the MomPilot TV screen (if the TV app isn't installed yet, use **Set up without a TV for now**, then **TV → Add Mom's TV** and tap the stick in the list). When the TV asks **"Allow USB debugging?"**, tick **Always allow** and press **Allow**. The server installs or updates the MomPilot TV app, connects it, and the TV shows **"You're all set"**.
+4. **Other phones:** on a phone already signed in, open **TV → Use MomPilot on another phone → Show a code for another phone**. On the new phone, tap **Already use MomPilot on another phone?** and scan it (iPhone, in Safari: choose **Already use MomPilot on another phone?** and type the six digits).
+
+The server address is filled in on the phone automatically when the app is built with `mompilot.server` in `android/local.properties` (see [android/README.md](../android/README.md)); otherwise tap **Change** on the first screen and enter it.
 
 On Android you can share a link from the YouTube, Netflix or Prime Video app straight to **MomPilot**.
 

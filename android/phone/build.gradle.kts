@@ -7,6 +7,14 @@ plugins {
 }
 
 // Signed with the same release key as the TV app (android/keystore.properties, not in git).
+// The server address filled in on first launch, from android/local.properties (not in git):
+//   mompilot.server=https://my-pc.tail1234.ts.net
+val localProperties = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
+}
+val defaultServer: String = localProperties.getProperty("mompilot.server", "")
+
 val keystore = Properties().apply {
     val file = rootProject.file("keystore.properties")
     if (file.exists()) file.inputStream().use { load(it) }
@@ -19,8 +27,9 @@ android {
         applicationId = "com.mompilot.phone"
         minSdk = 26
         targetSdk = 35
-        versionCode = 6
-        versionName = "0.4.0"
+        versionCode = 7
+        versionName = "0.4.1"
+        buildConfigField("String", "DEFAULT_SERVER", "\"$defaultServer\"")
     }
     signingConfigs {
         if (keystore.isNotEmpty()) {
@@ -45,7 +54,7 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; buildConfig = true }
 }
 
 kotlin {

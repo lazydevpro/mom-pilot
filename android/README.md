@@ -1,27 +1,53 @@
-# MomPilot TV app (Fire OS)
+# MomPilot Android apps
 
-A small Android app for Mom's Fire TV Stick. It:
+One Gradle project with two apps:
 
-- shows the six-digit code that connects your phone to this TV, and who is connected;
-- keeps running in the background (a foreground service that starts again after a reboot) and opens a show in YouTube, Netflix or Prime Video when the server asks and ADB isn't available;
-- lets Mom disconnect, and change the server address.
-
-Remote button presses don't go through this app: since 2024, Fire OS blocks apps from using the TV's own ADB, so the server sends them over ADB directly. The app only ever opens YouTube (`com.amazon.firetv.youtube`), Netflix (`com.netflix.ninja`) and Prime Video (`com.amazon.firebat`), and accepts only `https`, `netflix` and `amzn` (Prime Video) links.
+| Module | App | Runs on |
+|---|---|---|
+| `:app` | **MomPilot TV** (`com.mompilot.tv`) | Mom's Fire OS stick (Fire OS 7 or 8) |
+| `:phone` | **MomPilot** (`com.mompilot.phone`) | Your Android phone (Android 8+) |
 
 Fire OS only: Vega OS sticks (Fire TV Stick 4K Select, Fire TV Stick HD 2nd Gen) can't install APKs.
 
+## The TV app
+
+- Until it is set up, shows a **QR code** with the TV's Tailscale address. The phone scans it (or picks the TV from a list), and the server sets the app up over ADB: it installs or updates the APK, then hands it the server address and its own credential through `SetupReceiver`. That receiver only accepts senders holding `WRITE_SECURE_SETTINGS`, which means ADB, not ordinary apps. Nothing is typed on the TV.
+- Once set up, shows "You're all set" with the caregiver's name and a **Disconnect** button.
+- Runs a foreground service that starts again after a reboot. It polls the server every 3 s and, if the server can't use ADB, opens the requested show itself.
+- Only ever opens YouTube (`com.amazon.firetv.youtube`), Netflix (`com.netflix.ninja`) and Prime Video (`com.amazon.firebat`), and accepts only `https`, `netflix` and `amzn` links. A journal makes sure each request is opened at most once.
+
+Remote button presses don't go through the app. Fire OS blocks ADB connections from the TV itself (tested on Fire OS 7.7.1.7), so the server sends them over ADB from outside.
+
+| File | What it does |
+|---|---|
+| `MainActivity.kt` | The TV screen: setup QR code, or who is connected |
+| `Engine.kt` | Background loop: polls, opens shows, reports results, backs off when offline |
+| `Launcher.kt` | Builds and checks the intent for YouTube, Netflix or Prime Video |
+| `Store.kt` | Server address, credential, and the journal of handled requests |
+| `RelayClient.kt` | HTTP client with the TV's bearer token |
+| `MomPilotService.kt` | Foreground service, boot receiver and `SetupReceiver` |
+
+## The phone app
+
+Kotlin and Jetpack Compose. First launch: **your name → Scan the code on Mom's TV**. That one scan creates your account and sets up the TV. Then:
+
+- **Shows**: saved shows with search and an app filter. Add them with **Share → MomPilot** from YouTube, Netflix or Prime Video, or by pasting a link. Tap one to play it on the TV.
+- **Remote**: D-pad, OK, Back, Home, playback and volume keys, wake, and a snapshot of the TV screen.
+- **TV**: status, add another TV, recent activity, your name, and a code to sign in a second phone.
+
+QR codes are scanned with Google's code scanner (no camera permission needed), so the phone needs Google Play services.
+
 ## Build
 
-Needs JDK 17 and the Android SDK (platform 35). From this folder:
+Needs JDK 17 and the Android SDK (platform 35). In `android/local.properties`:
 
-```powershell
-$env:JAVA_HOME = "C:\path\to\jdk-17"
-.\gradlew.bat :app:assembleRelease :app:lintRelease
+```properties
+sdk.dir=C\:/path/to/Android/Sdk
+# Optional: filled in on the phone app's first screen
+mompilot.server=https://my-pc.tail1234.ts.net
 ```
 
-On macOS/Linux use `./gradlew`. The APK is `app/build/outputs/apk/release/app-release.apk`.
-
-Release builds are signed with the key in `keystore.properties` (not in git):
+Release builds of both apps are signed with the key in `android/keystore.properties` (not in git):
 
 ```properties
 storeFile=release.jks
@@ -30,35 +56,14 @@ keyAlias=mompilot
 keyPassword=…
 ```
 
-Create one with `keytool -genkeypair -keystore release.jks -alias mompilot -keyalg RSA -keysize 3072 -validity 10000`. **Back up `release.jks` and `keystore.properties`.** An update signed with a different key can't be installed over the old app (you'd have to uninstall and pair again). Without `keystore.properties`, the release APK is unsigned; use `assembleDebug` for a quick test build.
+Create one with `keytool -genkeypair -keystore release.jks -alias mompilot -keyalg RSA -keysize 3072 -validity 10000`. **Back up `release.jks` and `keystore.properties`.** Updates signed with a different key can't be installed over the old apps.
 
-## Install
-
-See [docs/DEPLOY.md](../docs/DEPLOY.md) §3. In short, from the server:
-
-```bash
-adb connect 100.x.y.z:5555
-adb -s 100.x.y.z:5555 install -r app/build/outputs/apk/release/app-release.apk
-adb -s 100.x.y.z:5555 shell am start -n com.mompilot.tv/.MainActivity
+```powershell
+$env:JAVA_HOME = "C:\path\to\jdk-17"
+.\gradlew.bat :app:assembleRelease :phone:assembleRelease
 ```
 
-Open it once after installing, so Fire OS lets it start again after a reboot. On Fire OS 8, also allow background launches once:
+On macOS/Linux use `./gradlew`. Outputs:
 
-```bash
-adb -s 100.x.y.z:5555 shell appops set com.mompilot.tv SYSTEM_ALERT_WINDOW allow
-```
-
-## Server address
-
-Enter the HTTPS address from `tailscale serve`, such as `https://my-pc.tail1234.ts.net`. Plain `http://` is accepted only for Tailscale addresses (`100.64.0.0/10` or `*.ts.net`), which Tailscale already encrypts, or in debug builds. Changing the address starts a new pairing.
-
-## Code
-
-| File | What it does |
-|---|---|
-| `MainActivity.kt` | The TV screen: code, connected status, last action, disconnect, server address |
-| `Engine.kt` | Background loop: registers, polls every 3 s (backs off to 30 s when offline), opens shows, reports results |
-| `Launcher.kt` | Builds and checks the intent for YouTube, Netflix or Prime Video |
-| `Store.kt` | Settings, the TV's credential, and a journal so a command is opened at most once |
-| `RelayClient.kt` | HTTP client with the TV's bearer token |
-| `MomPilotService.kt` | The foreground service and the boot receiver |
+- `app/build/outputs/apk/release/app-release.apk` (TV). The server installs this during setup.
+- `phone/build/outputs/apk/release/phone-release.apk` (phone). The server offers it at `/download/mompilot.apk`.

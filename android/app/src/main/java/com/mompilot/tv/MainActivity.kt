@@ -19,6 +19,7 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
@@ -55,7 +56,8 @@ class MainActivity : Activity() {
             setPadding(dp(64), dp(40), dp(64), dp(40))
             setBackgroundColor(paper)
         }
-        setContentView(root)
+        // Scrolls if the text is larger than the screen (large font settings, smaller TVs).
+        setContentView(ScrollView(this).apply { isFillViewport = true; setBackgroundColor(paper); addView(root) })
         MomPilotService.start(this)
     }
 
@@ -121,7 +123,7 @@ class MainActivity : Activity() {
     private fun showSetup(address: String?, adbOn: Boolean) {
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val steps = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        steps.addView(text("Connect your family’s phone", 40f, bold = true))
+        steps.addView(text("Connect your family’s phone", 36f, bold = true))
         when {
             address == null -> {
                 steps.addView(text("Turn on Tailscale on this TV first: open the Tailscale app and sign in.", 26f))
@@ -132,9 +134,9 @@ class MainActivity : Activity() {
                 steps.addView(text("No Developer Options? Open Settings → My Fire TV → About and select the TV’s name 7 times.", 22f, muted))
             }
             else -> {
-                steps.addView(text("1.  On the phone, open MomPilot → TV → Add TV.", 26f))
-                steps.addView(text("2.  Scan this code, or tap this TV in the list.", 26f))
-                steps.addView(text("3.  If the TV asks “Allow USB debugging?”, tick “Always allow” and press Allow.", 26f))
+                steps.addView(text("1.  On your phone, open MomPilot.", 24f))
+                steps.addView(text("2.  Tap “Scan the code on Mom’s TV” and point the camera at this code.", 24f))
+                steps.addView(text("3.  If the TV asks “Allow USB debugging?”, tick “Always allow” and press Allow.", 24f))
                 steps.addView(text("This TV: $address", 22f, muted))
             }
         }

@@ -24,7 +24,11 @@ Errors are `{ "error": "CODE", "message": "Readable explanation" }`. JSON bodies
 | GET | `/api/shows` | — | `{shows}` (yours only) |
 | POST | `/api/shows` | `{title, link}` | `{show}` (201). Accepts YouTube (`watch`, `youtu.be`, `shorts`, `live`), Netflix (`/title/ID`, `/watch/ID`, with or without a country) and Prime Video (`gti=` links, `/detail/ID`, Amazon `/gp/video/detail/ASIN`, and `amzn.in` short links) |
 | DELETE | `/api/shows/:id` | — | `{ok:true}` |
-| POST | `/api/pair` | `{code, name}` | `{device}`; single-use six-digit code, valid 5 minutes |
+| GET | `/api/tvs/nearby` | — | `{tvs:[{name, address, adb, added}]}`: online Android devices on the tailnet (`tailscale status`), with whether ADB answers on 5555 |
+| POST | `/api/tvs/setup` | `{address, name?, serverUrl?}` | `{device}` (201 new, 200 again). Connects over ADB (`502 ADB_UNAUTHORIZED` until **Allow** is pressed on the TV; the phone retries), checks it's a Fire TV, installs or updates the TV app if the server has its APK, then hands the TV app the server address and a new credential. `409 TV_ALREADY_CONNECTED` if another account has it; `409 NO_SERVER_ADDRESS` if no public address is known |
+| GET | `/api/server` | — | `{publicUrl}`: `PUBLIC_URL` or this machine's `tailscale serve` HTTPS address |
+| GET | `/download/mompilot.apk` | — | The Android phone app, if built |
+| POST | `/api/pair` | `{code, name}` | `{device}`; older code-based pairing, kept for compatibility |
 | GET | `/api/devices` | — | `{devices}` |
 | GET | `/api/devices/:id` | — | `{device, adb, commands}` (newest 20 commands first) |
 | PATCH | `/api/devices/:id` | `{name?, adbTarget?}` | `{device}`; `adbTarget` such as `100.101.102.103:5555` or `null` |

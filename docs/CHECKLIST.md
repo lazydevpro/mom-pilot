@@ -10,12 +10,13 @@ Write down: stick model and Fire OS version (Settings → My Fire TV → About) 
 - [ ] The same address does **not** open with Tailscale turned off on the phone.
 - [ ] The server log shows `MomPilot server: http://127.0.0.1:8787 (adb: …)` with a real adb path.
 - [ ] `adb devices` on the server lists `100.x.y.z:5555  device` (not `unauthorized` or `offline`).
-- [ ] The TV app shows **"You're all set"** with your name after pairing.
+- [ ] Fresh phone: **name → Scan the code on Mom's TV** signs you in and connects the TV in one go; the TV shows **"You're all set"** with your name. Nothing is typed on the TV.
+- [ ] A second phone signs in with **TV → Use MomPilot on another phone** and sees the same shows and TV.
 - [ ] The phone's status pill is **green** and names the open app (for example "Home screen is open").
 
 ## B. Saving shows
 
-- [ ] YouTube: in the YouTube phone app, Share → Copy link → Add a show → paste → save. A thumbnail appears.
+- [ ] YouTube: in the YouTube phone app, Share → **MomPilot** → name it → Save. A thumbnail appears.
 - [ ] Netflix: Share → Copy link from the Netflix app → saves as Netflix.
 - [ ] Prime Video: Share → Copy link from the Prime Video app → saves as Prime Video. **If it's rejected, send the link format so it can be added.**
 - [ ] Android only: Share from the YouTube/Netflix app → **MomPilot** opens Add a show with the link filled in.
@@ -28,7 +29,7 @@ Write down: stick model and Fire OS version (Settings → My Fire TV → About) 
 |---|---|---|---|
 | Tap a saved **YouTube** show | Video plays with no remote presses | | |
 | Tap a saved **Netflix** show | Netflix opens that title (maybe "Who's watching?" first) | | |
-| Tap a saved **Prime Video** show | The title's page opens; OK on the remote plays it | | |
+| Tap a saved **Prime Video** show | Plays (or resumes) with no remote presses | | |
 | Tap a Netflix show **while Netflix is already open** on something else | Switches to the new title | | |
 | **Just open an app**: YouTube, Netflix, Prime Video buttons | Each app opens | | |
 | TV → Recently | Each attempt listed as Opened, or Didn't open with a reason | | |
@@ -49,7 +50,7 @@ Phone on mobile data (Wi-Fi off), Tailscale on.
 - [ ] Status pill is green.
 - [ ] A YouTube show plays. Seconds: ______
 - [ ] The remote works. Delay: ______ s.
-- [ ] Your second phone (other OS) does the same after linking with a code.
+- [ ] Your second phone does the same after scanning the code from the first.
 
 ## F. When things go wrong
 
@@ -61,7 +62,7 @@ Phone on mobile data (Wi-Fi off), Tailscale on.
 | Turn **ADB debugging off** on the TV, then tap a YouTube show | Status turns amber ("Remote unavailable"); the show still opens through the TV app; Recently shows it as Opened | |
 | Turn ADB debugging back on | Status green again within about a minute (no new Allow prompt) | |
 | Tailscale turned off on the stick | Phone shows "Can't reach the TV" with a clear message; nothing hangs | |
-| TV → Disconnect on the TV app | Phone loses access to that TV at once; the TV shows a new code; pairing again works | |
+| TV → Disconnect on the TV app | Phone loses access to that TV at once; the TV shows its setup QR code; scanning it again reconnects | |
 | Close and reopen the phone app a day later | Still signed in, same shows | |
 
 ## G. Before submitting
