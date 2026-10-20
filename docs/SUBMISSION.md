@@ -44,7 +44,7 @@ The repo must contain all source, assets and setup instructions. It must be eith
 - [ ] Decide: public (simplest) or private.
 - [ ] If private: GitHub → Settings → Collaborators → add **chris-trag, knmeiss, giolaq, anishamalde, mosesroth, emersonsklar**, and share with **testing@devpost.com** as the rules describe.
 - [x] GitHub release `v0.4.1` with `MomPilot-phone-0.4.1.apk` and `MomPilot-TV-0.4.1.apk`, so judges can install them without building (Claude).
-- [ ] Check the README's setup steps on a fresh clone (Claude).
+- [x] Fresh clone: `npm ci`, `npm test` and `npm run build` work (Claude).
 
 ## 4. Devpost form (required)
 
