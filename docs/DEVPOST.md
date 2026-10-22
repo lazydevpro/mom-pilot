@@ -69,7 +69,7 @@ Mom doesn't have to do anything except turn on the TV.
 
 ## Try it out (links)
 
-- GitHub: https://github.com/lazydevpro/mom-pilot (private, shared with the reviewers)
+- GitHub: https://github.com/lazydevpro/mom-pilot (public, GNU AGPL-3.0)
 - APKs: https://github.com/lazydevpro/mom-pilot/releases/tag/v0.4.1
 - Demo video: **[fill in]**
 
@@ -124,7 +124,7 @@ Steps (full guide: `docs/DEPLOY.md`):
 
 ### Tailscale
 
-- **What I used it for:** a private network between my phone, my PC and Mom's stick, with an HTTPS address for the server from `tailscale serve`. The server uses `tailscale status --json` to find the TV for setup.
+- **What I used it for:** a private network between my phone, the server and Mom's stick, with an HTTPS address for the server from `tailscale serve`. The server uses `tailscale status --json` to find the TV for setup.
 - **What worked well:** MagicDNS plus HTTPS certificates gave the server a real HTTPS address with one command. ADB across the tailnet worked from my office on mobile data. Signing in on the TV by scanning a QR code was easy.
 - **What needs work:** the Fire TV UI has no always-on VPN setting; I had to set the hidden secure setting `always_on_vpn_app` over ADB. On my Xiaomi phone, Tailscale sometimes dropped and needed to be turned off and on.
 - **Onboarding:** very quick: an account, an app on each device, done.

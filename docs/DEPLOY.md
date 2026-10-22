@@ -55,7 +55,6 @@ The server needs to be on whenever Mom might call. Pick one:
    sudo -u mompilot git clone https://github.com/lazydevpro/mom-pilot.git /home/mompilot/mom-pilot
    cd /home/mompilot/mom-pilot && sudo -u mompilot npm ci && sudo -u mompilot npm run build
    ```
-   The repository is private: clone with a GitHub token, or copy the folder over.
 3. Create `/etc/systemd/system/mompilot.service`:
    ```ini
    [Unit]

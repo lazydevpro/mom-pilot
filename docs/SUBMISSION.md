@@ -41,8 +41,7 @@ Rules: **under 3 minutes**, **in English**, uploaded **public on YouTube or Vime
 
 The repo must contain all source, assets and setup instructions. It must be either **public with an open-source license** (GNU AGPL-3.0 is in the repo; it must show in the About section) or **private and shared**.
 
-- [ ] Decide: public (simplest) or private.
-- [ ] If private: GitHub → Settings → Collaborators → add **chris-trag, knmeiss, giolaq, anishamalde, mosesroth, emersonsklar**, and share with **testing@devpost.com** as the rules describe.
+- [x] Public, licensed GNU AGPL-3.0 (shows in the About section).
 - [x] GitHub release `v0.4.1` with `MomPilot-phone-0.4.1.apk` and `MomPilot-TV-0.4.1.apk`, so judges can install them without building (Claude).
 - [x] Fresh clone: `npm ci`, `npm test` and `npm run build` work (Claude).
 
@@ -79,6 +78,6 @@ For each entry: task, steps, expected vs actual, severity, workaround, suggestio
 ## 6. Final checks (Thursday)
 
 - [ ] Video link plays in a private/incognito window.
-- [ ] Repo access works for the reviewers (private) or the license shows (public).
+- [x] The license shows in the repo's About section (public).
 - [ ] Devpost form submitted, not just saved as a draft. You get a confirmation.
 - [ ] Keep the server, the stick and the repo available until judging ends (20 November).
