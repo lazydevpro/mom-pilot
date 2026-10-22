@@ -71,7 +71,7 @@ Mom doesn't have to do anything except turn on the TV.
 
 - GitHub: https://github.com/lazydevpro/mom-pilot (public, GNU AGPL-3.0)
 - APKs: https://github.com/lazydevpro/mom-pilot/releases/tag/v0.4.1
-- Demo video: **[fill in]**
+- Demo video: https://youtu.be/vq6og8MMtcI
 
 ## Testing instructions
 

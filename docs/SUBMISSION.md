@@ -23,7 +23,7 @@ Rules: **under 3 minutes**, **in English**, uploaded **public on YouTube or Vime
 - [ ] Narrate in English, or add English subtitles.
 - [ ] No copyrighted music. Use no music, or a royalty-free track.
 - [ ] Blur or avoid third-party logos and show footage (Netflix, Prime Video, YouTube video content). Prefer an openly licensed YouTube video (for example Blender's *Big Buck Bunny*, CC BY) for the "it plays" moment.
-- [ ] Upload as **Public**, check it plays logged-out, and copy the link.
+- [x] Uploaded as **Public**: https://youtu.be/vq6og8MMtcI
 
 ### Shot list (about 2:45)
 
