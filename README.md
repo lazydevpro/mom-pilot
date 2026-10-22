@@ -16,6 +16,7 @@ Works with Fire OS sticks (Fire OS 7 and 8). Vega OS sticks (Fire TV Stick 4K Se
 - **Set it up:** [docs/DEPLOY.md](docs/DEPLOY.md)
 - **Check it works:** [docs/CHECKLIST.md](docs/CHECKLIST.md)
 - **Why it's built this way:** [docs/PRD.md](docs/PRD.md) and [docs/PLAN.md](docs/PLAN.md)
+- **Friction log (problems hit while building):** [docs/FRICTION-LOG.md](docs/FRICTION-LOG.md)
 - **API:** [server/API.md](server/API.md) · **Android apps:** [android/README.md](android/README.md)
 
 ## Develop

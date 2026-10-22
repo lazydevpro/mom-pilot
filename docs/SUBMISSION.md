@@ -61,7 +61,7 @@ The repo must contain all source, assets and setup instructions. It must be eith
 
 ## 5. Friction log (optional, up to 10% bonus)
 
-Written up in [DEVPOST.md](DEVPOST.md#friction-log).
+Written up in [FRICTION-LOG.md](FRICTION-LOG.md): https://github.com/lazydevpro/mom-pilot/blob/main/docs/FRICTION-LOG.md
 
 For each entry: task, steps, expected vs actual, severity, workaround, suggestion. Problems found while building:
 

@@ -1,6 +1,6 @@
 # MomPilot — PRD v2
 
-Version 2.0 · 9 October 2026 · Amazon Appstore developer hackathon, Fire TV track · Submission due 23 October 2026, 12:00 PM PT (24 October, 12:30 AM IST)
+Version 2.0 · 9 October 2026 · Build, Ship, Shape: Amazon Developer Hackathon, Fire TV track · Submission due 23 October 2026, 12:00 PM PT (24 October, 12:30 AM IST)
 
 The previous version is kept at [archive/PRD-v1.md](archive/PRD-v1.md).
 
