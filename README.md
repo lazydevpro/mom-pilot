@@ -1,6 +1,6 @@
 # MomPilot
 
-**"I'll put it on for you."** Mom can turn on her TV but can't find her way around the Fire TV menus. When she calls, her son taps a saved show on his phone and it starts on her TV. If something needs a button press, such as Netflix's "Who's watching?", he presses it from a remote on his phone.
+**Remote Fire TV assistance for parents.** Mom can turn on her TV but can't find her way around the Fire TV menus. When she calls, her son taps a saved show on his phone and it starts on her TV. If something needs a button press, such as Netflix's "Who's watching?", he presses it from a remote on his phone.
 
 - **Phone app**: a native Android app (Kotlin, Jetpack Compose), plus a web app for iPhone. Saved shows with search and filters, Share → MomPilot from YouTube, Netflix and Prime Video, a remote, a snapshot of the TV screen, and TV status. A second phone joins the same account by scanning a code.
 - **MomPilot server** (Node, no runtime dependencies): keeps the saved shows, finds the TV on your Tailscale network and sets it up over ADB (no typing on the TV), then opens shows in YouTube, Netflix or Prime Video and presses remote keys.

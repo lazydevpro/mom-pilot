@@ -6,32 +6,32 @@ Copy each section into the matching Devpost field. It's written in your voice ("
 
 ## Name and tagline
 
-**MomPilot**: I'll put it on for you.
+**MomPilot**: remote Fire TV assistance for parents.
 
 ## Elevator pitch (short description)
 
-My mom can turn on her TV, but she can't find her way around the Fire TV menus. With MomPilot, when she calls, I tap a saved show on my phone, from anywhere, and it starts playing on her TV. No codes, no typing, nothing for her to learn.
+My mom can't navigate Fire TV menus. With MomPilot, I tap a saved show on my phone from the office and it plays on her TV: YouTube, Netflix or Prime Video. No remote.
 
 ## About the project
 
 ### Inspiration
 
-My mom can turn on her TV, but the Fire TV home screen, app rows and profile pickers are too much for her. When she wants to watch something, she calls me and I talk her through it, button by button, over the phone. That takes ten minutes and usually ends with her watching something else. I wanted to be able to say "I'll put it on for you" and just do it, from my office.
+My mom is staying with me for a short medical treatment. I'm at the office most of the day, so she's alone at home, and the days are long with nobody around. She has a TV and can turn it on, but the Fire TV home screen, app rows and profile pickers are too much for her. When she wanted to watch something, she'd call me and I'd try to talk her through it, button by button, over the phone. That doesn't work. I wanted to just put her show on for her, from my office.
 
 ### What it does
 
-- **Saved shows:** I keep a list of Mom's shows and films on my phone, like a watchlist. I add them by sharing a link from the YouTube, Netflix or Prime Video app to MomPilot, or by pasting one. Search and app filters keep the list easy to use.
+- **Saved shows:** I keep a list of Mom's shows and films on my phone, like a playlist she can watch one by one. I add them by sharing a link from the YouTube, Netflix or Prime Video app to MomPilot, or by pasting one. Search and app filters keep the list easy to use.
 - **One tap to play:** tapping a show opens it on Mom's Fire TV in the right app and starts playback. YouTube and Prime Video play directly; Netflix opens the title and plays it.
 - **A remote in my pocket:** if something needs a button press, like Netflix's "Who's watching?", I use the remote on my phone: arrows, OK, Back, Home, play/pause, volume, and wake. **See TV screen** shows me a snapshot of what's on her TV.
 - **Status:** the phone shows whether the TV is reachable and which app is open.
-- **Setup with no typing on the TV:** the MomPilot TV app shows a QR code. I scan it with my phone, Mom presses **Allow** once, and the TV says "You're all set". A second phone (my sibling's, say) joins by scanning a code from mine.
+- **Setup with no typing on the TV:** the MomPilot TV app shows a QR code. I scan it with my phone, Mom presses **Allow** once, and the TV says "You're all set". Another phone joins the same account by scanning a code from mine.
 
 Mom doesn't have to do anything except turn on the TV.
 
 ### How I built it
 
 - **Mom's Fire TV Stick** (Fire OS) runs Tailscale and has ADB debugging on.
-- **A small Node.js server** (no runtime dependencies) runs on my PC at home. It keeps the saved shows and talks to the stick over **ADB across Tailscale**:
+- **A small Node.js server** (no runtime dependencies) runs on an always-on cloud machine (Oracle Cloud) on the same Tailscale network. It keeps the saved shows and talks to the stick over **ADB across Tailscale**:
   - it opens shows with deep links into the YouTube, Netflix and Prime Video apps;
   - it sends remote keys by writing input events straight to the stick's input device, which takes about 0.2 s per key instead of about 1 s with `input keyevent`.
 - **A native Android phone app** (Kotlin, Jetpack Compose) for the saved list, remote and setup. QR codes are scanned with Google's code scanner, so no camera permission is needed. A web app (React, TypeScript, Vite) covers iPhones.
@@ -59,13 +59,13 @@ Mom doesn't have to do anything except turn on the TV.
 
 ### What's next for MomPilot
 
-- **Tailscale inside the TV app** (a built-in VPN), so Mom's stick needs only one app.
+- **Tailscale built into MomPilot**, so there's nothing else to install and it's faster and more reliable: install MomPilot, and it works end to end.
+- **More apps** beyond YouTube, Netflix and Prime Video.
 - **A Vega OS version** for the newer sticks, if Vega allows the same kind of control.
-- **Voice:** "Alexa, ask MomPilot to put on her show" for when she wants to do it herself.
 
 ## Built with
 
-`kotlin` `jetpack-compose` `android` `fire-os` `fire-tv` `adb` `tailscale` `node.js` `react` `typescript` `vite` `ml-kit` `zxing`
+`kotlin` `jetpack-compose` `android` `fire-os` `fire-tv` `adb` `tailscale` `node.js` `oracle-cloud` `react` `typescript` `vite` `ml-kit` `zxing`
 
 ## Try it out (links)
 

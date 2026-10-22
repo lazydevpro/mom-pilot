@@ -48,7 +48,7 @@ The repo must contain all source, assets and setup instructions. It must be eith
 
 ## 4. Devpost form (required)
 
-- [ ] **Project name and tagline**: "MomPilot: I'll put it on for you."
+- [ ] **Project name and tagline**: "MomPilot: remote Fire TV assistance for parents"
 - [ ] **Text description**: drafted in [DEVPOST.md](DEVPOST.md); check it reads true and paste it in.
 - [ ] **Track**: Fire TV.
 - [ ] **Mini challenges**:
