@@ -31,4 +31,4 @@ npm test
 
 For production, `npm run build` then `npm start` serves the app and the API from one process on `127.0.0.1:8787`; publish it on your tailnet with `tailscale serve --bg 8787`. Settings: `PORT`, `HOST`, `ADB_PATH` (found automatically in the Android SDK), `MOMPILOT_DATA_DIR` (default `.local`).
 
-MomPilot is [MIT licensed](LICENSE). Earlier prototype documents are in [docs/archive](docs/archive).
+Copyright © 2026 lazydevpro. MomPilot is licensed under the [GNU Affero General Public License v3.0](LICENSE): if you use or change this code, including running it as a service for others, you must release your source under the same licence. Earlier prototype documents are in [docs/archive](docs/archive).

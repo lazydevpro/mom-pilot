@@ -39,7 +39,7 @@ Rules: **under 3 minutes**, **in English**, uploaded **public on YouTube or Vime
 
 ## 3. GitHub repository (required)
 
-The repo must contain all source, assets and setup instructions. It must be either **public with an open-source license** (MIT is already in the repo; it must show in the About section) or **private and shared**.
+The repo must contain all source, assets and setup instructions. It must be either **public with an open-source license** (GNU AGPL-3.0 is in the repo; it must show in the About section) or **private and shared**.
 
 - [ ] Decide: public (simplest) or private.
 - [ ] If private: GitHub → Settings → Collaborators → add **chris-trag, knmeiss, giolaq, anishamalde, mosesroth, emersonsklar**, and share with **testing@devpost.com** as the rules describe.

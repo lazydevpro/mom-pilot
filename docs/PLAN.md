@@ -166,7 +166,7 @@ Put the ADB bridge on a small always-on device in Mom's home instead (for exampl
    - **Oracle Cloud Always Free**: has a Mumbai region and more power, but idle free VMs can be stopped after 7 days of low use, and free ARM capacity is often unavailable. Upgrading the account to pay-as-you-go stops the idle shutdown and stays free within the limits. Also needs a card.
    - **Your own PC or an old Android phone at home**: free with no card, but it must stay on. An old phone on Mom's Wi-Fi could reach the stick over the home network without Tailscale on the stick.
    - Tailscale's personal plan is free.
-4. **GitHub repository: private for now.** At submission, share it with testing@devpost.com and the Amazon reviewers listed in the rules, or make it public with the MIT license.
+4. **GitHub repository: private for now.** At submission, share it with testing@devpost.com and the Amazon reviewers listed in the rules, or make it public with an open-source license (now GNU AGPL-3.0).
 
 ## Sources
 
